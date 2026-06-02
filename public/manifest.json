@@ -1,0 +1,28 @@
+{
+  "name": "App Operacional - Tableros",
+  "short_name": "App Tableros",
+  "description": "Aplicativo de apontamento e impressão para a fábrica",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0F172A",
+  "theme_color": "#3B82F6",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/logo.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    },
+    {
+      "src": "/logo.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    },
+    {
+      "src": "/logo.png",
+      "type": "image/png",
+      "sizes": "any",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/:match*",
+      "destination": "https://tableros.ngrok.app/:match*"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}
