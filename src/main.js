@@ -195,7 +195,8 @@ async function renderAmarracao(container) {
       method: 'GET',
       headers: { 
         'Content-Type': 'application/json',
-        'ngrok-skip-browser-warning': 'true'
+        'ngrok-skip-browser-warning': 'true',
+        'Prefer': 'odata.maxpagesize=0'
       }
     });
     
