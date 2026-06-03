@@ -491,10 +491,10 @@ async function renderAmarracao(container) {
       formError.textContent = '';
       
       const { data, error } = await supabase
-        .from('operadores_pin')
-        .select('id, nome')
+        .from('app_apontadores')
+        .select('id, nome_completo')
         .eq('pin', val)
-        .eq('is_active', true)
+        .eq('status', 'ATIVO')
         .single();
         
       if (error || !data) {
@@ -506,7 +506,7 @@ async function renderAmarracao(container) {
         pinInput.focus();
         btnSave.disabled = true;
       } else {
-        respInput.value = data.nome;
+        respInput.value = data.nome_completo;
         respIdInput.value = data.id;
         respInput.classList.add('success-text');
         pinInput.disabled = false;
