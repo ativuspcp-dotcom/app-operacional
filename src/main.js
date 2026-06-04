@@ -236,7 +236,7 @@ async function renderAmarracao(container) {
   try {
     const { data } = await supabase
       .from('pcp_op_amarracao')
-      .select('id, pi_numero, item_code, item_name, status')
+      .select('id, pi_numero, item_code, item_name, status, qtd_caixas')
       .eq('liberada_producao', true)
       .in('status', ['Pendente', 'Em Produção'])
       .order('created_at', { ascending: true });
@@ -578,6 +578,29 @@ async function renderAmarracao(container) {
     btnSave.innerHTML = 'Salvando...';
 
     try {
+      const opId = document.getElementById('op_select').value || null;
+
+      // VALIDATION: Check if OP limit is reached
+      if (opId) {
+        const selectedOp = ops.find(o => o.id === opId);
+        if (selectedOp && selectedOp.qtd_caixas > 0) {
+          const { count, error: countError } = await supabase
+            .from('amarracoes')
+            .select('id', { count: 'exact', head: true })
+            .eq('op_id', opId);
+            
+          if (!countError && count >= selectedOp.qtd_caixas) {
+            formError.textContent = `Limite atingido! Esta OP permite apenas ${selectedOp.qtd_caixas} amarrações/caixas.`;
+            btnSave.disabled = false;
+            btnSave.innerHTML = `
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+              Salvar Apontamento
+            `;
+            return;
+          }
+        }
+      }
+
       const payload = {
         data_producao: document.getElementById('data_producao').value,
         local_producao: localProd,
@@ -591,7 +614,7 @@ async function renderAmarracao(container) {
         responsavel_id: respIdInput.value,
         responsavel_nome: respInput.value,
         tablet_user_id: currentSession.user.id,
-        op_id: document.getElementById('op_select').value || null
+        op_id: opId
       };
 
       const { data: insertData, error: insertError } = await supabase
