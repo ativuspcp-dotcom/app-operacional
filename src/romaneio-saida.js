@@ -322,6 +322,7 @@ async function renderScanner() {
         <label style="display: block; font-weight: 600; margin-bottom: 8px;">Ler QR Code do Pacote</label>
         
         <div id="custom-camera-ui" style="margin-bottom: 12px; border-radius: 8px; overflow: hidden; border: 1px solid var(--color-border); background: var(--color-surface-alt); position: relative;">
+          <div id="rs-scan-msg" style="text-align: center; padding: 8px; min-height: 20px; font-size: 1rem; font-weight: 600; background: rgba(255,255,255,0.9); width: 100%; z-index: 10; border-bottom: 1px solid var(--color-border);"></div>
           <div id="qr-reader" style="width: 100%; display: none;"></div>
           <div id="camera-overlay" style="padding: 40px 20px; text-align: center;">
             <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--color-primary)" stroke-width="2" style="margin-bottom: 12px;"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
@@ -336,7 +337,6 @@ async function renderScanner() {
         <div style="text-align: center; font-size: 0.85rem; color: var(--color-text-sec); margin-bottom: 8px;">ou digite/bipe com pistola bluetooth:</div>
         
         <input type="text" id="rs-qrcode-input" class="form-input" style="width: 100%; text-align: center; font-size: 1.2rem; padding: 16px; background: #f0f7ff; border-color: var(--color-primary);" placeholder="Clique e bipe..." autocomplete="off">
-        <div id="rs-scan-msg" style="text-align: center; margin-top: 8px; min-height: 20px; font-size: 0.9rem; font-weight: 600;"></div>
       </div>
     </div>
     
@@ -358,7 +358,6 @@ async function renderScanner() {
   `;
 
   const input = document.getElementById('rs-qrcode-input');
-  input.focus();
   
   input.addEventListener('keypress', async (e) => {
     if (e.key === 'Enter') {
@@ -366,7 +365,7 @@ async function renderScanner() {
       const qr = input.value.trim();
       input.value = '';
       if (qr) await handleScan(qr);
-      input.focus();
+      // Removed input.focus() to prevent keyboard from popping up unexpectedly on mobile
     }
   });
 
