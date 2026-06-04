@@ -215,8 +215,9 @@ async function renderAmarracao(container) {
       realItems = itemsData.map(d => ({
         id: d.ItemCode, // using ItemCode as ID
         cod: d.ItemCode,
-        nome: d.ItemName || d.ForeignName,
+        nome: d.ForeignName || d.ItemName,
         qualidade: qualityMap[d.U_Quality] || d.U_Quality || '-',
+        uQualityCode: d.U_Quality,
         comprimento: d.SalesFactor1,
         largura: d.SalesFactor2,
         espessura: d.SalesFactor3,
@@ -270,6 +271,11 @@ async function renderAmarracao(container) {
             </div>
           </div>
 
+          <div class="form-group" style="display: flex; align-items: center; margin-bottom: 12px;">
+            <input type="checkbox" id="check_descarte" style="width: 18px; height: 18px; accent-color: var(--color-primary); cursor: pointer;">
+            <label for="check_descarte" class="form-label" style="margin-left: 8px; margin-bottom: 0; cursor: pointer;">É Descarte?</label>
+          </div>
+
           <div class="form-group">
             <label class="form-label">Ordem de Produção <span class="required">*</span></label>
             <select id="op_select" class="form-input" style="appearance: auto; height: 48px; background-color: var(--dark-300);" required>
@@ -281,7 +287,7 @@ async function renderAmarracao(container) {
           <div class="form-group">
             <label class="form-label">Item</label>
             <div class="custom-dropdown-container">
-              <input type="text" id="item_search" class="form-input" placeholder="Comece a digitar para buscar..." required autocomplete="off">
+              <input type="text" id="item_search" class="form-input" placeholder="Comece a digitar para buscar..." required autocomplete="off" readonly>
               <div id="item_dropdown" class="custom-dropdown" style="display: none;"></div>
             </div>
           </div>
@@ -404,9 +410,14 @@ async function renderAmarracao(container) {
 
   function renderDropdown(query) {
     const q = query.toLowerCase();
-    const matches = realItems.filter(m => 
-      m.cod.toLowerCase().includes(q) || m.nome.toLowerCase().includes(q)
-    ).slice(0, 50);
+    const isDescarte = document.getElementById('check_descarte').checked;
+    
+    const matches = realItems.filter(m => {
+      if (isDescarte) {
+        if (!['003', '004', '005', '006'].includes(m.uQualityCode)) return false;
+      }
+      return m.cod.toLowerCase().includes(q) || m.nome.toLowerCase().includes(q);
+    }).slice(0, 50);
 
     if (matches.length === 0) {
       dropdown.innerHTML = '<div class="dropdown-item-empty">Nenhum item encontrado.</div>';
@@ -450,8 +461,35 @@ async function renderAmarracao(container) {
     }
   });
 
-  // Logic for OP Selection
+  const checkDescarte = document.getElementById('check_descarte');
   const opSelect = document.getElementById('op_select');
+
+  checkDescarte.addEventListener('change', (e) => {
+    const isDescarte = e.target.checked;
+    opSelect.required = !isDescarte;
+    opSelect.disabled = isDescarte;
+    
+    if (isDescarte) {
+      opSelect.value = ''; // clear OP selection
+      searchInput.readOnly = false; // allow typing
+      selectedItem = null;
+      document.getElementById('cod_item').value = '';
+      document.getElementById('qualidade').value = '';
+      searchInput.value = '';
+      if (document.getElementById('pecas')) document.getElementById('pecas').value = '';
+      calcTotalM3();
+    } else {
+      searchInput.readOnly = true;
+      searchInput.value = '';
+      selectedItem = null;
+      document.getElementById('cod_item').value = '';
+      document.getElementById('qualidade').value = '';
+      if (document.getElementById('pecas')) document.getElementById('pecas').value = '';
+      calcTotalM3();
+    }
+  });
+
+  // Logic for OP Selection
   opSelect.addEventListener('change', (e) => {
     const opt = e.target.selectedOptions[0];
     const itemCode = opt ? opt.getAttribute('data-item') : null;
