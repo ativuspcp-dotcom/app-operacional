@@ -310,7 +310,7 @@ async function renderAmarracao(container) {
             </div>
             <div class="form-group">
               <label class="form-label">Total (m³)</label>
-              <input type="text" id="total_m3" class="form-input input-readonly" readonly placeholder="0.000">
+              <input type="text" id="total_m3" class="form-input input-readonly" readonly placeholder="0.0000">
             </div>
           </div>
 
