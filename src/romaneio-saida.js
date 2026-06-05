@@ -186,7 +186,7 @@ async function renderItemList() {
         linesChecklistHTML += `
           <div style="display: flex; justify-content: space-between; font-size: 0.9rem; padding: 4px 0;">
             <span>${isMet ? '✔️' : '❌'} Linha ${line.item_code}</span>
-            <span style="color: ${isMet ? 'var(--color-success)' : 'var(--color-danger)'}">${scannedForThisLine.toFixed(2)} / ${expected}</span>
+            <span style="color: ${isMet ? 'var(--color-success)' : 'var(--color-danger)'}">${scannedForThisLine.toFixed(4)} / ${expected}</span>
           </div>
         `;
       }
@@ -201,7 +201,7 @@ async function renderItemList() {
     minVolChecklistHTML = `
       <div style="display: flex; justify-content: space-between; font-size: 0.9rem; padding: 4px 0; border-top: 1px solid var(--color-border); margin-top: 4px; padding-top: 8px;">
         <span>${minVolMet ? '✔️' : '❌'} Vol. Mínimo OC</span>
-        <span style="color: ${minVolMet ? 'var(--color-success)' : 'var(--color-danger)'}">${totalVolumeAll.toFixed(2)} / ${selectedOC.quantidade_minima}</span>
+        <span style="color: ${minVolMet ? 'var(--color-success)' : 'var(--color-danger)'}">${totalVolumeAll.toFixed(4)} / ${selectedOC.quantidade_minima}</span>
       </div>
     `;
   }
@@ -266,7 +266,7 @@ async function renderItemList() {
             </div>
             <div style="display: flex; justify-content: space-between; font-size: 0.9rem; margin-top: 8px;">
               <span style="color: ${statusColor}; font-weight: ${scannedVol > 0 ? '600' : 'normal'};">
-                Bipado: ${scannedVol.toFixed(2)} / ${isComplemento ? '∞ (Complemento)' : item.quantidade_programada}
+                Bipado: ${scannedVol.toFixed(4)} / ${isComplemento ? '∞ (Complemento)' : item.quantidade_programada}
               </span>
               <span style="background: var(--color-surface-alt); padding: 2px 6px; border-radius: 4px;">${scannedForLine.length} pacotes</span>
             </div>
@@ -310,7 +310,7 @@ async function renderScanner() {
       <div style="display: flex; justify-content: space-between; font-size: 0.9rem; padding: 12px; background: var(--color-surface-alt); border-radius: 8px;">
         <div>
           <div style="color: var(--color-text-light);">Vol. nesta linha</div>
-          <strong id="lbl-vol-linha">${scannedVol.toFixed(2)} / ${isComplemento ? '∞' : selectedLine.quantidade_programada}</strong>
+          <strong id="lbl-vol-linha">${scannedVol.toFixed(4)} / ${isComplemento ? '∞' : selectedLine.quantidade_programada}</strong>
         </div>
         <div style="text-align: right;">
           <div style="color: var(--color-text-light);">Peso Carga Total</div>
@@ -582,7 +582,7 @@ function updateScannerUI() {
   const totalBipadoKg = scannedPackages.reduce((sum, p) => sum + (Number(p.peso) || 0), 0);
 
   const lblVol = document.getElementById('lbl-vol-linha');
-  if (lblVol) lblVol.innerHTML = `${scannedVol.toFixed(2)} / ${isComplemento ? '∞' : selectedLine.quantidade_programada}`;
+  if (lblVol) lblVol.innerHTML = `${scannedVol.toFixed(4)} / ${isComplemento ? '∞' : selectedLine.quantidade_programada}`;
 
   const lblPeso = document.getElementById('lbl-peso-total');
   if (lblPeso) lblPeso.innerHTML = `${totalBipadoKg.toFixed(2)} / ${selectedOC.peso_maximo || '∞'} kg`;

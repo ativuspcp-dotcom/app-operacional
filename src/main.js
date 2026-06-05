@@ -400,7 +400,7 @@ async function renderAmarracao(container) {
     
     if (comp && larg && esp && pecas) {
       const total = comp * larg * esp * pecas;
-      totalInput.value = total.toFixed(3);
+      totalInput.value = total.toFixed(4);
     } else {
       totalInput.value = '';
     }
