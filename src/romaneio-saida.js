@@ -380,10 +380,30 @@ async function renderScanner() {
   });
 
   document.querySelectorAll('.rs-remove-pkg').forEach(btn => {
-    btn.addEventListener('click', (e) => {
+    btn.addEventListener('click', async (e) => {
       const qr = e.currentTarget.dataset.qrcode;
-      scannedPackages = scannedPackages.filter(p => p.qrcode !== qr);
-      updateScannerUI(); // Refresh only the UI, not the camera
+      const pkgToRemove = scannedPackages.find(p => p.qrcode === qr);
+      if (!pkgToRemove) return;
+      
+      // Remove from DB
+      e.currentTarget.innerHTML = '<div class="spinner" style="width:14px;height:14px;"></div>';
+      e.currentTarget.disabled = true;
+      
+      try {
+        const { error: delError } = await supabase.from('expedicao_romaneio_itens').delete().eq('qrcode', qr).throwOnError();
+        if (selectedOC.tipo !== 'transferencia_interna') {
+          const { error: updError } = await supabase.from('amarracoes').update({ saida: false }).eq('qrcode', qr).throwOnError();
+        }
+        
+        scannedPackages = scannedPackages.filter(p => p.qrcode !== qr);
+        updateScannerUI();
+      } catch (err) {
+        console.error(err);
+        alert('Erro ao remover pacote: ' + err.message);
+        // Re-enable on error
+        e.currentTarget.innerHTML = 'Remover';
+        e.currentTarget.disabled = false;
+      }
     });
   });
 
