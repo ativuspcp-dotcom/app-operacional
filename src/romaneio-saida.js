@@ -570,10 +570,12 @@ async function handleScan(qrcode) {
   if (itemError) throw itemError;
 
   // Update amarracoes
-  await supabase
-    .from('amarracoes')
-    .update({ saida: true })
-    .eq('qrcode', data.qrcode);
+  if (selectedOC.tipo !== 'transferencia_interna') {
+    await supabase
+      .from('amarracoes')
+      .update({ saida: true })
+      .eq('qrcode', data.qrcode);
+  }
 
   const pkgToSave = {
     id: itemData.id,
@@ -637,7 +639,9 @@ function updateScannerUI() {
         
         try {
           const { error: delError } = await supabase.from('expedicao_romaneio_itens').delete().eq('qrcode', qr).throwOnError();
-          const { error: updError } = await supabase.from('amarracoes').update({ saida: false }).eq('qrcode', qr).throwOnError();
+          if (selectedOC.tipo !== 'transferencia_interna') {
+            const { error: updError } = await supabase.from('amarracoes').update({ saida: false }).eq('qrcode', qr).throwOnError();
+          }
           
           scannedPackages = scannedPackages.filter(p => p.qrcode !== qr);
           updateScannerUI();
