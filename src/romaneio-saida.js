@@ -723,11 +723,13 @@ async function handleFinalizar() {
         docLine = {
           ItemCode: line.item_code,
           Quantity: 0,
-          Usage: selectedOC.usage_sap || 13,
           UnitPrice: Number(line.unit_price) || 1,
-          Currency: selectedOC.currency || 'USD',
           WarehouseCode: 'DIRETO'
         };
+        if (selectedOC.tipo !== 'transferencia_interna') {
+          docLine.Usage = selectedOC.usage_sap || 13;
+          docLine.Currency = selectedOC.currency || 'USD';
+        }
         groups[key].lines.push(docLine);
       }
       
