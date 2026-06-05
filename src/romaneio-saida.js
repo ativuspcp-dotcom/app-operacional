@@ -477,6 +477,16 @@ async function handleScan(qrcode) {
     return;
   }
 
+  // Regra Transferência: Local de Partida
+  if (selectedOC.tipo === 'transferencia_interna') {
+    if (data.local_estoque !== selectedOC.local_partida) {
+      msgDiv.textContent = `BLOQUEADO: Pacote está no local ${data.local_estoque || 'Desconhecido'}, mas a transferência exige saída de ${selectedOC.local_partida}!`;
+      msgDiv.style.color = 'var(--color-danger)';
+      playErrorSound();
+      return;
+    }
+  }
+
   // Regra 2: Código do item bate com a linha selecionada
   // We assume item_cod matches cod_item (adjust if needed, but AppSheet logic did this)
   if (data.cod_item !== selectedLine.item_code) {
@@ -651,6 +661,10 @@ async function handleFinalizar() {
   if (scannedPackages.length === 0) {
     alert('Nenhum pacote foi bipado.');
     return;
+  }
+
+  if (selectedOC.tipo === 'transferencia_interna') {
+    return await handleFinalizarTransferencia();
   }
 
   document.getElementById('rs-content').innerHTML = `
@@ -982,6 +996,60 @@ async function handleFinalizar() {
     console.error(err);
     alert('Erro no fechamento: ' + err.message);
     currentView = 'item_list'; 
+    renderCurrentView();
+  }
+}
+
+async function handleFinalizarTransferencia() {
+  document.getElementById('rs-content').innerHTML = `
+    <div style="text-align:center; padding: 40px;">
+      <div class="spinner" style="margin-bottom: 16px;"></div>
+      <div style="font-weight: 600;" id="rs-loading-title">Finalizando Transferência...</div>
+      <div style="font-size: 0.85rem; color: var(--color-text-sec); margin-top: 8px;" id="rs-loading-subtitle">Movimentando pacotes para o novo local.</div>
+    </div>
+  `;
+
+  try {
+    const qrcodes = scannedPackages.map(p => p.qrcode);
+    
+    // Atualiza os pacotes para o novo local de destino
+    const { error: updError } = await supabase
+      .from('amarracoes')
+      .update({ local_estoque: selectedOC.local_destino })
+      .in('qrcode', qrcodes);
+
+    if (updError) throw updError;
+
+    // Atualiza o Romaneio
+    if (currentRomaneio) {
+      const { error: roError } = await supabase
+        .from('expedicao_romaneios')
+        .update({ status: 'Finalizado' })
+        .eq('id', currentRomaneio.id);
+      if (roError) throw roError;
+    }
+
+    // Atualiza a OC
+    const { error: ocError } = await supabase
+      .from('expedicao_ordens_carregamento')
+      .update({ status: 'Finalizada' })
+      .eq('id', selectedOC.id);
+    if (ocError) throw ocError;
+
+    alert('Transferência Interna finalizada com sucesso! Os pacotes foram movimentados.');
+    
+    selectedOC = null;
+    selectedLine = null;
+    currentRomaneio = null;
+    scannedPackages = [];
+    currentView = 'oc_list';
+    loadOCs(); // Refresh list and it will render the list
+  } catch (err) {
+    console.error('Error in handleFinalizarTransferencia:', err);
+    alert('Erro ao finalizar transferência: ' + err.message);
+    
+    // Fallback para tela anterior
+    currentView = 'item_list';
     renderCurrentView();
   }
 }
