@@ -1080,7 +1080,7 @@ async function handleFinalizarTransferencia() {
     currentRomaneio = null;
     scannedPackages = [];
     currentView = 'oc_list';
-    loadOCs(); // Refresh list and it will render the list
+    await renderCurrentView();
   } catch (err) {
     console.error('Error in handleFinalizarTransferencia:', err);
     alert('Erro ao finalizar transferência: ' + err.message);
