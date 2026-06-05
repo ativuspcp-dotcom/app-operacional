@@ -454,14 +454,28 @@ async function renderScanner() {
 
 async function handleScan(qrcode) {
   const msgDiv = document.getElementById('rs-scan-msg');
-  msgDiv.textContent = 'Buscando pacote...';
-  msgDiv.style.color = 'var(--color-text-sec)';
+  const showScanMsg = (msg, type) => {
+    msgDiv.textContent = msg;
+    if (type === 'success') {
+      msgDiv.style.backgroundColor = '#dcfce7';
+      msgDiv.style.color = '#166534';
+      msgDiv.style.borderColor = '#22c55e';
+    } else if (type === 'error') {
+      msgDiv.style.backgroundColor = '#fee2e2';
+      msgDiv.style.color = '#991b1b';
+      msgDiv.style.borderColor = '#ef4444';
+      playErrorSound();
+    } else {
+      msgDiv.style.backgroundColor = 'rgba(255,255,255,0.9)';
+      msgDiv.style.color = 'var(--color-text-sec)';
+      msgDiv.style.borderColor = 'var(--color-border)';
+    }
+  };
+  showScanMsg('Buscando pacote...', 'info');
 
   // 1. Check if already scanned in current session
   if (scannedPackages.find(p => p.qrcode === qrcode)) {
-    msgDiv.textContent = 'Pacote já foi bipado neste romaneio!';
-    msgDiv.style.color = 'var(--color-danger)';
-    playErrorSound();
+    showScanMsg('Pacote já foi bipado neste romaneio!', 'error');
     return;
   }
 
@@ -473,26 +487,20 @@ async function handleScan(qrcode) {
     .single();
 
   if (error || !data) {
-    msgDiv.textContent = 'QR Code não encontrado no estoque!';
-    msgDiv.style.color = 'var(--color-danger)';
-    playErrorSound();
+    showScanMsg('QR Code não encontrado no estoque!', 'error');
     return;
   }
 
   // Regra 1: Já saiu
   if (data.saida === true) {
-    msgDiv.textContent = 'BLOQUEADO: Este pacote já possui saída registrada!';
-    msgDiv.style.color = 'var(--color-danger)';
-    playErrorSound();
+    showScanMsg('BLOQUEADO: Este pacote já possui saída registrada!', 'error');
     return;
   }
 
   // Regra Transferência: Local de Partida
   if (selectedOC.tipo === 'transferencia_interna') {
     if (data.local_estoque !== selectedOC.local_partida) {
-      msgDiv.textContent = `BLOQUEADO: Pacote está no local ${data.local_estoque || 'Desconhecido'}, mas a transferência exige saída de ${selectedOC.local_partida}!`;
-      msgDiv.style.color = 'var(--color-danger)';
-      playErrorSound();
+      showScanMsg(`BLOQUEADO: Pacote está no local ${data.local_estoque || 'Desconhecido'}, mas a transferência exige saída de ${selectedOC.local_partida}!`, 'error');
       return;
     }
   }
@@ -500,9 +508,7 @@ async function handleScan(qrcode) {
   // Regra 2: Código do item bate com a linha selecionada
   // We assume item_cod matches cod_item (adjust if needed, but AppSheet logic did this)
   if (data.cod_item !== selectedLine.item_code) {
-    msgDiv.textContent = `BLOQUEADO: Pacote é do item ${data.cod_item}, mas a linha exige ${selectedLine.item_code}!`;
-    msgDiv.style.color = 'var(--color-danger)';
-    playErrorSound();
+    showScanMsg(`BLOQUEADO: Pacote é do item ${data.cod_item}, mas a linha exige ${selectedLine.item_code}!`, 'error');
     return;
   }
 
@@ -520,9 +526,7 @@ async function handleScan(qrcode) {
   // Regra 3: Peso Max
   if (selectedOC.peso_maximo > 0) {
     if ((totalBipadoKg + pkgPeso) > Number(selectedOC.peso_maximo)) {
-      msgDiv.textContent = 'BLOQUEADO: Excede o Peso Máximo da Ordem de Carregamento!';
-      msgDiv.style.color = 'var(--color-danger)';
-      playErrorSound();
+      showScanMsg('BLOQUEADO: Excede o Peso Máximo da Ordem de Carregamento!', 'error');
       return;
     }
   }
@@ -531,9 +535,7 @@ async function handleScan(qrcode) {
   if (!isComplemento && Number(selectedLine.quantidade_programada) > 0) {
     // Allowing a small tolerance of 0.01 as per AppSheet formula: (SUM + pkgVol - 0.01) <= limit
     if ((scannedVol + pkgVol - 0.01) > Number(selectedLine.quantidade_programada)) {
-      msgDiv.textContent = 'BLOQUEADO: Excede o volume previsto para esta linha!';
-      msgDiv.style.color = 'var(--color-danger)';
-      playErrorSound();
+      showScanMsg('BLOQUEADO: Excede o volume previsto para esta linha!', 'error');
       return;
     }
   }
@@ -583,8 +585,7 @@ async function handleScan(qrcode) {
   
   scannedPackages.push(pkgToSave);
   
-  msgDiv.textContent = 'Pacote adicionado e salvo com sucesso!';
-  msgDiv.style.color = 'var(--color-success)';
+  showScanMsg('Pacote adicionado e salvo com sucesso!', 'success');
   
   // Update UI dynamically instead of destroying the whole page/camera
   updateScannerUI();
