@@ -196,7 +196,7 @@ async function renderItemList() {
         linesChecklistHTML += `
           <div style="display: flex; justify-content: space-between; font-size: 0.9rem; padding: 4px 0;">
             <span>${isMet ? '✔️' : '❌'} Linha ${line.item_code}</span>
-            <span style="color: ${isMet ? 'var(--color-success)' : 'var(--color-danger)'}">${scannedForThisLine.toFixed(4)} / ${expected}</span>
+            <span style="color: ${isMet ? 'var(--color-success)' : 'var(--color-danger)'}">${scannedForThisLine.toFixed(4)} / ${Number(expected.toFixed(4))}</span>
           </div>
         `;
       }
@@ -211,7 +211,7 @@ async function renderItemList() {
     minVolChecklistHTML = `
       <div style="display: flex; justify-content: space-between; font-size: 0.9rem; padding: 4px 0; border-top: 1px solid var(--color-border); margin-top: 4px; padding-top: 8px;">
         <span>${minVolMet ? '✔️' : '❌'} Vol. Mínimo OC</span>
-        <span style="color: ${minVolMet ? 'var(--color-success)' : 'var(--color-danger)'}">${totalVolumeAll.toFixed(4)} / ${selectedOC.quantidade_minima}</span>
+        <span style="color: ${minVolMet ? 'var(--color-success)' : 'var(--color-danger)'}">${totalVolumeAll.toFixed(4)} / ${Number(Number(selectedOC.quantidade_minima).toFixed(4))}</span>
       </div>
     `;
   }
