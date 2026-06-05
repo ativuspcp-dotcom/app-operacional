@@ -97,13 +97,23 @@ async function renderOCList() {
   content.innerHTML = `
     <div style="display: grid; gap: 16px;">
       ${data.map(oc => {
-        const armazens = [...new Set((oc.expedicao_ordens_carregamento_itens || []).map(i => i.armazem).filter(Boolean))];
-        const destinoText = armazens.length > 0 ? armazens.join(' / ') : 'Destino não especificado';
+        let destinoText = 'Destino não especificado';
+        let isTransf = oc.tipo === 'transferencia_interna';
+        
+        if (isTransf) {
+          destinoText = `${oc.local_partida || ''} &rarr; ${oc.local_destino || ''}`;
+        } else {
+          const armazens = [...new Set((oc.expedicao_ordens_carregamento_itens || []).map(i => i.armazem).filter(Boolean))];
+          if (armazens.length > 0) destinoText = armazens.join(' / ');
+        }
         
         return `
-        <div class="oc-card" data-id="${oc.id}" style="background: white; padding: 16px; border-radius: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); cursor: pointer; border-left: 4px solid var(--color-primary);">
+        <div class="oc-card" data-id="${oc.id}" style="background: white; padding: 16px; border-radius: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); cursor: pointer; border-left: 4px solid ${isTransf ? '#f59e0b' : 'var(--color-primary)'};">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-            <strong style="font-size: 1.1rem; color: var(--color-primary);">${oc.codigo_oc || 'Sem Código'}</strong>
+            <strong style="font-size: 1.1rem; color: ${isTransf ? '#d97706' : 'var(--color-primary)'};">
+              ${oc.codigo_oc || 'Sem Código'}
+              ${isTransf ? `<span style="font-size: 0.7rem; background: #fef3c7; color: #d97706; padding: 2px 6px; border-radius: 4px; margin-left: 4px; vertical-align: middle;">TRANSF</span>` : ''}
+            </strong>
             <span style="font-size: 0.85rem; background: var(--color-surface-alt); padding: 4px 8px; border-radius: 4px;">${oc.placa || 'Sem placa'}</span>
           </div>
           <div style="font-size: 0.9rem; color: var(--color-text-sec); display: flex; justify-content: space-between; margin-bottom: 4px;">
