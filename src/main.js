@@ -273,7 +273,7 @@ async function renderAmarracao(container) {
 
           <div class="form-group" style="display: flex; align-items: center; margin-bottom: 12px;">
             <input type="checkbox" id="check_descarte" style="width: 18px; height: 18px; accent-color: var(--color-primary); cursor: pointer;">
-            <label for="check_descarte" class="form-label" style="margin-left: 8px; margin-bottom: 0; cursor: pointer;">É Descarte?</label>
+            <label for="check_descarte" class="form-label" style="margin-left: 8px; margin-bottom: 0; cursor: pointer;">Descartes / Avulsas</label>
           </div>
 
           <div class="form-group">
@@ -410,12 +410,8 @@ async function renderAmarracao(container) {
 
   function renderDropdown(query) {
     const q = query.toLowerCase();
-    const isDescarte = document.getElementById('check_descarte').checked;
     
     const matches = realItems.filter(m => {
-      if (isDescarte) {
-        if (!['003', '004', '005', '006'].includes(m.uQualityCode)) return false;
-      }
       return m.cod.toLowerCase().includes(q) || m.nome.toLowerCase().includes(q);
     }).slice(0, 50);
 
