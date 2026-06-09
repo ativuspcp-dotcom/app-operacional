@@ -900,15 +900,10 @@ async function handleFinalizar() {
 
     if (nfes && nfes.length > 0) {
       let totalValor = nfes.reduce((acc, curr) => acc + (parseFloat(curr.valor_documento) || 0), 0);
-      let totalVolumeSum = 0;
+      let totalPeso = 0;
       for (const pkg of scannedPackages) {
-        const qrString = pkg.amarracao || pkg.qrcode || '';
-        const amParts = qrString.split('-');
-        if (amParts.length > 1) {
-          totalVolumeSum += parseFloat(amParts[1].replace(',', '.'));
-        }
+        totalPeso += parseFloat(pkg.peso) || 0;
       }
-      let totalPeso = totalVolumeSum * 500;
 
       const { data: driverData } = await supabase
         .from('logistica_motoristas')
