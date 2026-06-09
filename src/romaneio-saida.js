@@ -900,10 +900,11 @@ async function handleFinalizar() {
 
     if (nfes && nfes.length > 0) {
       let totalValor = nfes.reduce((acc, curr) => acc + (parseFloat(curr.valor_documento) || 0), 0);
-      let totalPeso = 0;
+      let totalVolumeSum = 0;
       for (const pkg of scannedPackages) {
-        totalPeso += parseFloat(pkg.peso) || 0;
+        totalVolumeSum += parseFloat(pkg.total_calc) || 0;
       }
+      let totalPeso = totalVolumeSum * 500;
 
       const { data: driverData } = await supabase
         .from('logistica_motoristas')
