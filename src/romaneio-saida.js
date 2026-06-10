@@ -951,12 +951,12 @@ async function handleFinalizar() {
              capM3: 0, 
              tipoCarroceria: r.tipo_carroceria || 2,
              uf: r.uf || ufOrigem,
-             renavan: r.renavam ? r.renavam.replace(/[^0-9]/g, '') : '00000000000'
+             renavam: r.renavam ? r.renavam.replace(/[^0-9]/g, '') : '00000000000'
            }));
          } else {
            reboquesPayload = list.map(p => ({
              placa: p.replace(/[^A-Z0-9]/gi, ''),
-             tara: 0, capKG: 0, capM3: 0, tipoCarroceria: 2, uf: ufOrigem, renavan: '00000000000'
+             tara: 0, capKG: 0, capM3: 0, tipoCarroceria: 2, uf: ufOrigem, renavam: '00000000000'
            }));
          }
       }
@@ -982,7 +982,7 @@ async function handleFinalizar() {
           tipoRodado: placaData?.tipo_rodado || 3,
           tipoCarroceria: placaData?.tipo_carroceria || 2,
           placa: selectedOC.placa ? selectedOC.placa.replace(/[^A-Z0-9]/gi, '') : '',
-          renavan: placaData?.renavam ? placaData.renavam.replace(/[^0-9]/g, '') : '00000000000',
+          renavam: placaData?.renavam ? placaData.renavam.replace(/[^0-9]/g, '') : '00000000000',
           tara: placaData?.tara || 0,
           capKG: placaData?.capacidade_kg || 0,
           capM3: 0,
