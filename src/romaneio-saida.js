@@ -517,10 +517,10 @@ async function handleScan(qrcode) {
     return;
   }
 
-  // Regra Transferência: Local de Partida
-  if (selectedOC.tipo === 'transferencia_interna') {
+  // Regra Transferência e Mercado Interno: Local de Partida
+  if (selectedOC.tipo === 'transferencia_interna' || selectedOC.tipo === 'mercado_interno') {
     if (data.local_estoque !== selectedOC.local_partida) {
-      showScanMsg(`BLOQUEADO: Pacote está no local ${data.local_estoque || 'Desconhecido'}, mas a transferência exige saída de ${selectedOC.local_partida}!`, 'error');
+      showScanMsg(`BLOQUEADO: Pacote está no local ${data.local_estoque || 'Desconhecido'}, mas a ordem exige saída de ${selectedOC.local_partida}!`, 'error');
       return;
     }
   }
@@ -700,6 +700,10 @@ async function handleFinalizar() {
 
   if (selectedOC.tipo === 'transferencia_interna') {
     return await handleFinalizarTransferencia();
+  }
+  
+  if (selectedOC.tipo === 'mercado_interno') {
+    return await handleFinalizarMercadoInterno();
   }
 
   document.getElementById('rs-content').innerHTML = `
@@ -1082,6 +1086,50 @@ async function handleFinalizarTransferencia() {
     alert('Erro ao finalizar transferência: ' + err.message);
     
     // Fallback para tela anterior
+    currentView = 'item_list';
+    renderCurrentView();
+  }
+}
+
+async function handleFinalizarMercadoInterno() {
+  document.getElementById('rs-content').innerHTML = `
+    <div style="text-align:center; padding: 40px;">
+      <div class="spinner" style="margin-bottom: 16px;"></div>
+      <div style="font-weight: 600;" id="rs-loading-title">Finalizando OC...</div>
+      <div style="font-size: 0.85rem; color: var(--color-text-sec); margin-top: 8px;" id="rs-loading-subtitle">Registrando saída definitiva.</div>
+    </div>
+  `;
+
+  try {
+    // O pacote já ganhou 'saida = true' na hora do bip, então só fechamos as tabelas mãe
+    // Atualiza o Romaneio
+    if (currentRomaneio) {
+      const { error: roError } = await supabase
+        .from('expedicao_romaneios')
+        .update({ status: 'Finalizado' })
+        .eq('id', currentRomaneio.id);
+      if (roError) throw roError;
+    }
+
+    // Atualiza a OC
+    const { error: ocError } = await supabase
+      .from('expedicao_ordens_carregamento')
+      .update({ status: 'Finalizada' })
+      .eq('id', selectedOC.id);
+    if (ocError) throw ocError;
+
+    alert('Ordem de Mercado Interno finalizada com sucesso! Os pacotes foram baixados do estoque.');
+    
+    selectedOC = null;
+    selectedLine = null;
+    currentRomaneio = null;
+    scannedPackages = [];
+    currentView = 'oc_list';
+    await renderCurrentView();
+  } catch (err) {
+    console.error('Error in handleFinalizarMercadoInterno:', err);
+    alert('Erro ao finalizar ordem: ' + err.message);
+    
     currentView = 'item_list';
     renderCurrentView();
   }
