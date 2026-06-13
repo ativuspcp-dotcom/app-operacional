@@ -1,7 +1,18 @@
 export default async function handler(req, res) {
-  // Extract path and query string from req.url to preserve everything perfectly
-  const targetPath = req.url.replace(/^\/api\//, '');
-  const url = `https://tableros.ngrok.app/${targetPath}`;
+  const { match, ...restQuery } = req.query;
+  const path = Array.isArray(match) ? match.join('/') : (match || '');
+  
+  const searchParams = new URLSearchParams();
+  for (const [key, value] of Object.entries(restQuery)) {
+    // Vercel query parsing might give an array if multiple params with same name exist
+    if (Array.isArray(value)) {
+      value.forEach(v => searchParams.append(key, v));
+    } else {
+      searchParams.append(key, value);
+    }
+  }
+  const qs = searchParams.toString();
+  const url = `https://tableros.ngrok.app/${path}${qs ? '?' + qs : ''}`;
   
   // Prepare headers to send to the backend
   const headers = { ...req.headers };
