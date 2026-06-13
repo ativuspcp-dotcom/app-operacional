@@ -663,12 +663,14 @@ async function renderAmarracao(container) {
           const responseText = await sapRes.text();
           
           if (!sapRes.ok) {
-            formError.textContent = `Salvo no banco, mas Impressora falhou (${sapRes.status}): ${responseText}`;
+            await supabase.from('amarracoes').delete().eq('id', insertData.id);
+            formError.textContent = `Impressora falhou (${sapRes.status}). Apontamento cancelado e não salvo no banco. Detalhe: ${responseText}`;
           } else {
             formSuccess.textContent = `Apontamento salvo! Impressora: ${responseText || 'OK'}`;
           }
         } catch (printErr) {
-          formError.textContent = `Salvo no banco, mas Impressora falhou (Rede): ${printErr.message}`;
+          await supabase.from('amarracoes').delete().eq('id', insertData.id);
+          formError.textContent = `Impressora falhou (Rede). Apontamento cancelado e não salvo no banco. Erro: ${printErr.message}`;
         }
       } else {
         formSuccess.textContent = 'Apontamento salvo no banco! (Impressão desativada)';
