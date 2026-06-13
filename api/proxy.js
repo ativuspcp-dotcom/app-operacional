@@ -20,10 +20,15 @@ export default async function handler(req, res) {
   delete headers.host;
   
   try {
+    let finalBody = undefined;
+    if (req.method !== 'GET' && req.method !== 'HEAD') {
+      finalBody = typeof req.body === 'object' ? JSON.stringify(req.body) : req.body;
+    }
+    
     const backendRes = await fetch(url, {
       method: req.method,
       headers: headers,
-      body: req.method !== 'GET' && req.method !== 'HEAD' ? req.body : undefined
+      body: finalBody
     });
     
     res.status(backendRes.status);
