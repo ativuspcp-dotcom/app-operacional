@@ -1,9 +1,7 @@
 export default async function handler(req, res) {
-  const { match } = req.query;
-  const path = Array.isArray(match) ? match.join('/') : (match || '');
-  
-  // Construct the target URL for the Python Ngrok backend
-  const url = `https://tableros.ngrok.app/${path}`;
+  // Extract path and query string from req.url to preserve everything perfectly
+  const targetPath = req.url.replace(/^\/api\//, '');
+  const url = `https://tableros.ngrok.app/${targetPath}`;
   
   // Prepare headers to send to the backend
   const headers = { ...req.headers };
