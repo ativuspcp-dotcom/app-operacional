@@ -271,7 +271,7 @@ async function renderItemList() {
         return `
           <div class="item-card" data-id="${item.id}" style="background: white; padding: 16px; border-radius: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); cursor: pointer; border-left: 4px solid ${isComplemento ? 'var(--color-warning)' : 'var(--color-primary)'};">
             <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
-              <strong style="font-size: 1rem; color: var(--color-text);">${item.item_code} - ${item.item_name}</strong>
+              <strong style="font-size: 1rem; color: var(--color-text);">${(item.item_name || '').split(/ - COMPENSADO| - PAINEL| - CHAPA/i)[0]}</strong>
               <span style="font-size: 0.85rem; color: var(--color-text-sec);">Ped: ${item.pedido_numero || '-'}</span>
             </div>
             <div style="display: flex; justify-content: space-between; font-size: 0.9rem; margin-top: 8px;">
@@ -315,7 +315,7 @@ async function renderScanner() {
   content.innerHTML = `
     <div style="background: white; padding: 20px; border-radius: 12px; margin-bottom: 16px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
       <h3 style="font-size: 1.1rem; margin-bottom: 8px;">${selectedLine.item_code}</h3>
-      <p style="color: var(--color-text-sec); font-size: 0.9rem; margin-bottom: 16px;">${selectedLine.item_name}</p>
+      <p style="color: var(--color-text-sec); font-size: 0.9rem; margin-bottom: 16px;">${(selectedLine.item_name || '').split(/ - COMPENSADO| - PAINEL| - CHAPA/i)[0]}</p>
       
       <div style="display: flex; justify-content: space-between; font-size: 0.9rem; padding: 12px; background: var(--color-surface-alt); border-radius: 8px;">
         <div>
