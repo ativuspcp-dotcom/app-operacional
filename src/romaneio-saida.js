@@ -1137,6 +1137,7 @@ async function handleFinalizarMercadoInterno() {
           groups[key] = {
              U_Pedido: ped,
              CardCode: card,
+             BplId: line.bplid || selectedOC.bplid,
              totalGrossWeight: 0,
              items: {} // group by ItemCode to sum chapas
           };
@@ -1170,7 +1171,7 @@ async function handleFinalizarMercadoInterno() {
         CardCode: group.CardCode,
         Comments: 'Emitido via App Operacional',
         U_Pedido: group.U_Pedido,
-        BPL_IDAssignedToInvoice: selectedOC.bplid,
+        BPL_IDAssignedToInvoice: group.BplId,
         DocumentLines: docLines,
         TaxExtension: {
           Carrier: selectedOC.transportadora_cod || '',
