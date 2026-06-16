@@ -99,20 +99,34 @@ async function renderOCList() {
       ${data.map(oc => {
         let destinoText = 'Destino não especificado';
         let isTransf = oc.tipo === 'transferencia_interna';
+        let isMI = oc.tipo === 'mercado_interno';
+        
+        let borderColor = 'var(--color-primary)';
+        let titleColor = 'var(--color-primary)';
+        let badge = '';
         
         if (isTransf) {
           destinoText = `${oc.local_partida || ''} &rarr; ${oc.local_destino || ''}`;
+          borderColor = '#f59e0b';
+          titleColor = '#d97706';
+          badge = `<span style="font-size: 0.7rem; background: #fef3c7; color: #d97706; padding: 2px 6px; border-radius: 4px; margin-left: 4px; vertical-align: middle;">TRANSF</span>`;
         } else {
           const armazens = [...new Set((oc.expedicao_ordens_carregamento_itens || []).map(i => i.armazem).filter(Boolean))];
           if (armazens.length > 0) destinoText = armazens.join(' / ');
+          
+          if (isMI) {
+            borderColor = '#10b981';
+            titleColor = '#059669';
+            badge = `<span style="font-size: 0.7rem; background: #d1fae5; color: #059669; padding: 2px 6px; border-radius: 4px; margin-left: 4px; vertical-align: middle;">M.I.</span>`;
+          }
         }
         
         return `
-        <div class="oc-card" data-id="${oc.id}" style="background: white; padding: 16px; border-radius: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); cursor: pointer; border-left: 4px solid ${isTransf ? '#f59e0b' : 'var(--color-primary)'};">
+        <div class="oc-card" data-id="${oc.id}" style="background: white; padding: 16px; border-radius: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); cursor: pointer; border-left: 4px solid ${borderColor};">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-            <strong style="font-size: 1.1rem; color: ${isTransf ? '#d97706' : 'var(--color-primary)'};">
+            <strong style="font-size: 1.1rem; color: ${titleColor};">
               ${oc.codigo_oc || 'Sem Código'}
-              ${isTransf ? `<span style="font-size: 0.7rem; background: #fef3c7; color: #d97706; padding: 2px 6px; border-radius: 4px; margin-left: 4px; vertical-align: middle;">TRANSF</span>` : ''}
+              ${badge}
             </strong>
             <span style="font-size: 0.85rem; background: var(--color-surface-alt); padding: 4px 8px; border-radius: 4px;">${oc.placa || 'Sem placa'}</span>
           </div>
