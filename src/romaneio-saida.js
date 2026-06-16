@@ -1115,7 +1115,88 @@ async function handleFinalizarMercadoInterno() {
   `;
 
   try {
-    // O pacote já ganhou 'saida = true' na hora do bip, então só fechamos as tabelas mãe
+    // 1. Obter linhas originais da OC para pegar o LineNum (da recém-criada coluna line_num)
+    const { data: ocLines, error: linesError } = await supabase
+      .from('expedicao_ordens_carregamento_itens')
+      .select('*')
+      .eq('ordem_id', selectedOC.id);
+    
+    if (linesError) throw linesError;
+
+    // 2. Agrupar pacotes por Pedido e Parceiro de Negócios
+    const groups = {};
+    for (const pkg of scannedPackages) {
+       const line = ocLines.find(l => l.id === pkg.ordem_item_id);
+       if (!line) continue;
+       
+       const ped = line.pedido_numero || 'SEM_PEDIDO';
+       const card = line.cod_pn || '';
+       const key = ped + '_' + card;
+       
+       if (!groups[key]) {
+          groups[key] = {
+             U_Pedido: ped,
+             CardCode: card,
+             totalGrossWeight: 0,
+             items: {} // group by ItemCode to sum chapas
+          };
+       }
+       
+       groups[key].totalGrossWeight += (Number(pkg.peso) || 0);
+       
+       const icode = line.item_code;
+       // We use icode + line_num as the unique identifier for the line
+       const lineKey = icode + '_' + line.line_num;
+
+       if (!groups[key].items[lineKey]) {
+          groups[key].items[lineKey] = {
+             ItemCode: icode,
+             BaseType: 17,
+             BaseEntry: ped,
+             BaseLine: line.line_num,
+             Quantity: 0
+          };
+       }
+       
+       groups[key].items[lineKey].Quantity += (Number(pkg.qtd_total_chapas) || 0);
+    }
+
+    // 3. Montar DocumentLines e disparar para o SAP
+    for (const key in groups) {
+      const group = groups[key];
+      const docLines = Object.values(group.items);
+      
+      const payload = {
+        CardCode: group.CardCode,
+        Comments: 'Emitido via App Operacional',
+        U_Pedido: group.U_Pedido,
+        BPL_IDAssignedToInvoice: selectedOC.bplid,
+        DocumentLines: docLines,
+        TaxExtension: {
+          Carrier: selectedOC.transportadora_cod || '',
+          NetWeight: group.totalGrossWeight,
+          GrossWeight: group.totalGrossWeight
+        }
+      };
+
+      document.getElementById('rs-loading-title').innerText = `Faturando Pedido ${group.U_Pedido}...`;
+      document.getElementById('rs-loading-subtitle').innerText = `Enviando para a Service Layer`;
+
+      const { data, error } = await supabase.functions.invoke('faturar-sap', {
+        body: payload
+      });
+      
+      if (error) {
+        throw new Error(error.message || (data && data.error) || 'Erro desconhecido ao faturar no SAP');
+      }
+      if (data && data.error) {
+        throw new Error(data.error);
+      }
+    }
+
+    document.getElementById('rs-loading-title').innerText = `Finalizando OC...`;
+    document.getElementById('rs-loading-subtitle').innerText = `Registrando saída definitiva.`;
+
     // Atualiza o Romaneio
     if (currentRomaneio) {
       const { error: roError } = await supabase
@@ -1132,7 +1213,7 @@ async function handleFinalizarMercadoInterno() {
       .eq('id', selectedOC.id);
     if (ocError) throw ocError;
 
-    alert('Ordem de Mercado Interno finalizada com sucesso! Os pacotes foram baixados do estoque.');
+    alert('Ordem de Mercado Interno finalizada e Faturada no SAP com sucesso!');
     
     selectedOC = null;
     selectedLine = null;
