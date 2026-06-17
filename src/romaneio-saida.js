@@ -1165,7 +1165,7 @@ async function handleFinalizarMercadoInterno() {
           };
        }
        
-       groups[key].items[lineKey].Quantity += (Number(pkg.qtd_total_chapas) || 0);
+       groups[key].items[lineKey].Quantity += (Number(pkg.qtd_caixas) || 0);
     }
 
     // 3. Montar DocumentLines e disparar para o SAP
