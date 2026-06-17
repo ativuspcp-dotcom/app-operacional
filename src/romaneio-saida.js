@@ -782,7 +782,7 @@ async function handleFinalizar() {
         groups[key].lines.push(docLine);
       }
       
-      docLine.Quantity += (Number(pkg.pecas) || 0);
+      docLine.Quantity += pkgVol;
     }
 
     // 3. Fazer o disparo do POST para cada agrupamento (cada Nota)
