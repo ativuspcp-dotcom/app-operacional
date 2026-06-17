@@ -117,8 +117,8 @@ async function renderOCList() {
           titleColor = '#d97706';
           badge = `<span style="font-size: 0.7rem; background: #fef3c7; color: #d97706; padding: 2px 6px; border-radius: 4px; margin-left: 4px; vertical-align: middle;">TRANSF</span>`;
         } else {
-          const armazens = [...new Set((oc.expedicao_ordens_carregamento_itens || []).map(i => i.armazem).filter(Boolean))];
-          if (armazens.length > 0) destinoText = armazens.join(' / ');
+          const clientes = [...new Set((oc.expedicao_ordens_carregamento_itens || []).map(i => i.pn_nome).filter(Boolean))];
+          if (clientes.length > 0) destinoText = clientes.join(' / ');
           
           if (isMI) {
             borderColor = '#10b981';
@@ -782,7 +782,7 @@ async function handleFinalizar() {
         groups[key].lines.push(docLine);
       }
       
-      docLine.Quantity += pkgVol;
+      docLine.Quantity += (Number(pkg.pecas) || 0);
     }
 
     // 3. Fazer o disparo do POST para cada agrupamento (cada Nota)
@@ -1165,7 +1165,7 @@ async function handleFinalizarMercadoInterno() {
           };
        }
        
-       groups[key].items[lineKey].Quantity += (Number(pkg.qtd_caixas) || 0);
+       groups[key].items[lineKey].Quantity += (Number(pkg.pecas) || 0);
     }
 
     // 3. Montar DocumentLines e disparar para o SAP
