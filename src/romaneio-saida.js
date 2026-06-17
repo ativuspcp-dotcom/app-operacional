@@ -22,8 +22,15 @@ export async function renderRomaneioSaida(container) {
 
 async function renderCurrentView() {
   if (currentScanner) {
-    try { await currentScanner.stop(); } catch(e){}
-    try { await currentScanner.clear(); } catch(e){}
+    try {
+      if (currentScanner.isScanning) {
+        await Promise.race([
+          currentScanner.stop(),
+          new Promise(resolve => setTimeout(resolve, 500))
+        ]);
+      }
+      currentScanner.clear();
+    } catch(e) {}
     currentScanner = null;
   }
   
@@ -1165,7 +1172,8 @@ async function handleFinalizarMercadoInterno() {
           };
        }
        
-       groups[key].items[lineKey].Quantity += (Number(pkg.pecas) || 0);
+       const chapas = Number(pkg.pecas) || Number(pkg.qtd_caixas) || 1;
+       groups[key].items[lineKey].Quantity += chapas;
     }
 
     // 3. Montar DocumentLines e disparar para o SAP
