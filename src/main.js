@@ -15,7 +15,7 @@ export function setBPLID(id) {
 
 async function loadUserProfile(userId) {
   try {
-    const { data, error } = await supabase.from('usuarios').select('*').eq('id', userId).single();
+    const { data, error } = await supabase.from('user_profiles').select('*').eq('id', userId).single();
     if (data) {
       userProfile = data;
       if (userProfile.filiais_permitidas && userProfile.filiais_permitidas.length > 0) {
