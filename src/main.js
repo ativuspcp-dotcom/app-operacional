@@ -191,70 +191,83 @@ async function renderHome(container) {
     await supabase.auth.signOut();
   });
 
-  // Fetch permissions from user_module_permissions joined with modules
-  const { data: perms, error } = await supabase
-    .from('user_module_permissions')
-    .select(`
-      can_view,
-      modules (
-        name, slug, icon, type, group_name
-      )
-    `)
-    .eq('user_id', currentSession.user.id)
-    .eq('can_view', true);
+  try {
+    // Fetch permissions from user_module_permissions joined with modules
+    const { data: perms, error } = await supabase
+      .from('user_module_permissions')
+      .select(`
+        can_view,
+        modules (
+          name, slug, icon, type, group_name
+        )
+      `)
+      .eq('user_id', currentSession.user.id)
+      .eq('can_view', true);
 
-  if (error) {
-    document.getElementById('home-content').innerHTML = `<div class="text-center mt-4" style="color: #ef4444;">Erro ao carregar permissões.</div>`;
-    return;
-  }
-
-  // Filter only app modules
-  const appModules = perms.filter(p => p.modules && p.modules.type === 'app').map(p => p.modules);
-
-  if (appModules.length === 0) {
-    document.getElementById('home-content').innerHTML = `
-      <div class="text-center mt-4" style="padding: 24px; background: white; border-radius: 12px;">
-        <h3>Sem Acesso</h3>
-        <p style="color: var(--color-text-sec); margin-top: 8px; font-size: 0.9rem;">Esta estação não tem nenhum módulo liberado. Configure no Portal.</p>
-      </div>
-    `;
-    return;
-  }
-
-  const content = document.getElementById('home-content');
-  content.innerHTML = `<h3 style="font-size: 1.1rem; margin-top: 8px;">Estação de Trabalho</h3><div class="module-grid" id="module-grid"></div>`;
-  
-  const grid = document.getElementById('module-grid');
-
-  appModules.forEach(mod => {
-    const card = document.createElement('div');
-    card.className = 'module-card';
-    
-    // Default factory icon
-    let iconSvg = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>';
-    if (mod.slug === 'app_amarracao') {
-      iconSvg = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>';
-    } else if (mod.slug === 'app_romaneio_saida') {
-      iconSvg = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 17h4V5H2v12h3"></path><path d="M20 17h2v-9h-4V5H14v12h3"></path><path d="M14 17c0 1.66-1.34 3-3 3s-3-1.34-3-3s1.34-3 3-3s3 1.34 3 3z"></path></svg>';
+    if (error) {
+      document.getElementById('home-content').innerHTML = `<div class="text-center mt-4" style="color: #ef4444;">Erro ao carregar permissões: ${error.message}</div>`;
+      return;
     }
 
-    card.innerHTML = `
-      <div class="module-icon">${iconSvg}</div>
-      <div class="module-title">${mod.name}</div>
-    `;
+    if (!perms) {
+      document.getElementById('home-content').innerHTML = `<div class="text-center mt-4" style="color: #ef4444;">Erro ao carregar permissões: Resposta vazia</div>`;
+      return;
+    }
 
-    card.addEventListener('click', () => {
+    // Filter only app modules
+    const appModules = perms.filter(p => p.modules && p.modules.type === 'app').map(p => p.modules);
+
+    if (appModules.length === 0) {
+      document.getElementById('home-content').innerHTML = `
+        <div class="text-center mt-4" style="padding: 24px; background: white; border-radius: 12px;">
+          <h3>Sem Acesso</h3>
+          <p style="color: var(--color-text-sec); margin-top: 8px; font-size: 0.9rem;">Esta estação não tem nenhum módulo liberado. Configure no Portal.</p>
+        </div>
+      `;
+      return;
+    }
+
+    const content = document.getElementById('home-content');
+    content.innerHTML = `<h3 style="font-size: 1.1rem; margin-top: 8px;">Estação de Trabalho</h3><div class="module-grid" id="module-grid"></div>`;
+    
+    const grid = document.getElementById('module-grid');
+
+    appModules.forEach(mod => {
+      const card = document.createElement('div');
+      card.className = 'module-card';
+      
+      // Default factory icon
+      let iconSvg = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>';
       if (mod.slug === 'app_amarracao') {
-        window.location.hash = '/amarracao';
+        iconSvg = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>';
       } else if (mod.slug === 'app_romaneio_saida') {
-        window.location.hash = '/romaneio-saida';
-      } else {
-        alert('Módulo ' + mod.name + ' em desenvolvimento.');
+        iconSvg = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 17h4V5H2v12h3"></path><path d="M20 17h2v-9h-4V5H14v12h3"></path><path d="M14 17c0 1.66-1.34 3-3 3s-3-1.34-3-3s1.34-3 3-3s3 1.34 3 3z"></path></svg>';
       }
-    });
 
-    grid.appendChild(card);
-  });
+      card.innerHTML = `
+        <div class="module-icon">${iconSvg}</div>
+        <div class="module-title">${mod.name}</div>
+      `;
+
+      card.addEventListener('click', () => {
+        if (mod.slug === 'app_amarracao') {
+          window.location.hash = '/amarracao';
+        } else if (mod.slug === 'app_romaneio_saida') {
+          window.location.hash = '/romaneio-saida';
+        } else {
+          alert('Módulo ' + mod.name + ' em desenvolvimento.');
+        }
+      });
+
+      grid.appendChild(card);
+    });
+  } catch (err) {
+    console.error('Error rendering home:', err);
+    const content = document.getElementById('home-content');
+    if (content) {
+      content.innerHTML = `<div class="text-center mt-4" style="color: #ef4444;">Erro fatal ao carregar a tela inicial: ${err.message}</div>`;
+    }
+  }
 }
 
 async function renderAmarracao(container) {
