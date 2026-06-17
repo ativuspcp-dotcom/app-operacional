@@ -190,7 +190,8 @@ async function renderItemList() {
       qrcode: i.qrcode,
       ordem_item_id: i.ordem_item_id,
       total_calc: i.quantidade,
-      peso: i.peso
+      peso: i.peso,
+      pecas: i.pecas
     }));
   } else {
     scannedPackages = [];
@@ -610,7 +611,8 @@ async function handleScan(qrcode) {
       qrcode: data.qrcode,
       ordem_item_id: selectedLine.id,
       quantidade: data.total_calc,
-      peso: data.peso
+      peso: data.peso,
+      pecas: data.pecas
     }])
     .select()
     .single();
@@ -629,7 +631,8 @@ async function handleScan(qrcode) {
     qrcode: data.qrcode,
     ordem_item_id: selectedLine.id,
     total_calc: data.total_calc,
-    peso: data.peso
+    peso: data.peso,
+    pecas: data.pecas
   };
   
   scannedPackages.push(pkgToSave);
@@ -750,20 +753,6 @@ async function handleFinalizar() {
       
     if (linesError) throw linesError;
 
-    // Buscar pecas do amarracoes pois não salvamos no romaneio_itens
-    const qrcodes = scannedPackages.map(p => p.qrcode);
-    if (qrcodes.length > 0) {
-      const { data: amarData } = await supabase.from('amarracoes').select('qrcode, pecas').in('qrcode', qrcodes);
-      if (amarData) {
-        for (const pkg of scannedPackages) {
-          const am = amarData.find(a => a.qrcode === pkg.qrcode);
-          if (am && am.pecas) {
-            pkg.pecas = am.pecas;
-          }
-        }
-      }
-    }
-
     // 2. Agrupar pacotes por Pedido e CardCode
     const groups = {};
     for (const pkg of scannedPackages) {
@@ -858,7 +847,7 @@ async function handleFinalizar() {
           });
           groups[key].sapDocNumSaved = sapDocNum;
           
-          // Atualizar amarrações (pacotes) deste grupo garantindo saida=true e vinculando o DocEntry gerado
+          // Atualizar amarracoes (pacotes) deste grupo garantindo saida=true e vinculando o DocEntry gerado
           const groupQRs = scannedPackages
             .filter(pkg => {
               const line = ocLines.find(l => l.id === pkg.ordem_item_id);
@@ -1174,20 +1163,6 @@ async function handleFinalizarMercadoInterno() {
       .eq('ordem_id', selectedOC.id);
     
     if (linesError) throw linesError;
-
-    // Buscar pecas do amarracoes pois não salvamos no romaneio_itens
-    const qrcodes = scannedPackages.map(p => p.qrcode);
-    if (qrcodes.length > 0) {
-      const { data: amarData } = await supabase.from('amarracoes').select('qrcode, pecas').in('qrcode', qrcodes);
-      if (amarData) {
-        for (const pkg of scannedPackages) {
-          const am = amarData.find(a => a.qrcode === pkg.qrcode);
-          if (am && am.pecas) {
-            pkg.pecas = am.pecas;
-          }
-        }
-      }
-    }
 
     // 2. Agrupar pacotes por Pedido e Parceiro de Negócios
     const groups = {};
