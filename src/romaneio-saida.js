@@ -825,7 +825,12 @@ async function handleFinalizar() {
         }
         
         if (data && data.error) {
-          throw new Error(data.error);
+          throw new Error(typeof data.error === 'object' ? JSON.stringify(data.error) : data.error);
+        }
+        if (data && data.data && data.data.error) {
+          const sapErr = data.data.error;
+          const msg = sapErr.message ? sapErr.message.value : JSON.stringify(sapErr);
+          throw new Error('Erro SAP: ' + msg);
         }
         
         const sapDocNum = data?.data?.DocNum;
@@ -1225,7 +1230,12 @@ async function handleFinalizarMercadoInterno() {
         throw new Error(error.message || (data && data.error) || 'Erro desconhecido ao faturar no SAP');
       }
       if (data && data.error) {
-        throw new Error(data.error);
+        throw new Error(typeof data.error === 'object' ? JSON.stringify(data.error) : data.error);
+      }
+      if (data && data.data && data.data.error) {
+        const sapErr = data.data.error;
+        const msg = sapErr.message ? sapErr.message.value : JSON.stringify(sapErr);
+        throw new Error('Erro SAP: ' + msg);
       }
     }
 
@@ -1248,6 +1258,8 @@ async function handleFinalizarMercadoInterno() {
       .eq('id', selectedOC.id);
     if (ocError) throw ocError;
 
+      const debugHtml = sapResponses.length === 0 ? '<div style="color:red;font-weight:bold;margin-top:10px;">AVISO: Nenhum pacote foi enviado ao SAP! (groups vazio)</div>' : '<div style="margin-top:10px;font-size:10px;text-align:left;background:#eee;padding:5px;border-radius:4px;max-height:100px;overflow:auto;">' + JSON.stringify(sapResponses) + '</div>';
+
       document.getElementById('rs-content').innerHTML = `
         <div style="text-align:center; padding: 40px;">
           <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2" style="margin-bottom: 16px;">
@@ -1255,7 +1267,8 @@ async function handleFinalizarMercadoInterno() {
           </svg>
           <div style="font-weight: 600; font-size: 1.2rem; margin-bottom: 8px;">Sucesso!</div>
           <div style="font-size: 0.9rem; color: var(--color-text-sec); margin-bottom: 24px;">Ordem de Mercado Interno finalizada e Faturada no SAP.</div>
-          <button class="btn btn-primary" id="btn-success-ok" style="width: 100%;">Voltar para Lista</button>
+          ${debugHtml}
+          <button class="btn btn-primary" id="btn-success-ok" style="width: 100%; margin-top: 16px;">Voltar para Lista</button>
         </div>
       `;
 
