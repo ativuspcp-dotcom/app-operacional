@@ -4,14 +4,82 @@ import { renderRomaneioSaida } from './romaneio-saida.js';
 
 let currentSession = null;
 let currentPermissions = [];
+export let userProfile = null;
+export let currentBPLID = localStorage.getItem('app_bplid') ? parseInt(localStorage.getItem('app_bplid')) : 1;
+
+export function setBPLID(id) {
+  currentBPLID = parseInt(id);
+  localStorage.setItem('app_bplid', currentBPLID);
+  window.location.reload();
+}
+
+async function loadUserProfile(userId) {
+  try {
+    const { data, error } = await supabase.from('usuarios').select('*').eq('id', userId).single();
+    if (data) {
+      userProfile = data;
+      if (userProfile.filiais_permitidas && userProfile.filiais_permitidas.length > 0) {
+        if (!userProfile.filiais_permitidas.includes(currentBPLID)) {
+          setBPLID(userProfile.filiais_permitidas[0]);
+        }
+      } else {
+        userProfile.filiais_permitidas = [1];
+        if (currentBPLID !== 1) setBPLID(1);
+      }
+    }
+  } catch (e) {
+    console.error('Error loading profile', e);
+  }
+}
+
+export function renderBranchSelector() {
+  if (!userProfile) return '';
+  const FILIAIS = {
+    1: 'Tableros PAL',
+    3: 'Tableros OTC',
+    4: 'Tableros SFP'
+  };
+  const permitidas = userProfile.filiais_permitidas || [1];
+  
+  if (permitidas.length <= 1) {
+    const nome = FILIAIS[permitidas[0] || 1] || 'Filial';
+    return `<div style="color: rgba(255,255,255,0.8); font-size: 0.85rem; font-weight: 500;">${nome}</div>`;
+  }
+
+  const options = permitidas.map(id => {
+    return `<option value="${id}" ${currentBPLID === id ? 'selected' : ''}>${FILIAIS[id] || `Filial ${id}`}</option>`;
+  }).join('');
+
+  return `
+    <select id="app-bplid-select" style="background: rgba(255,255,255,0.1); color: white; border: 1px solid rgba(255,255,255,0.2); border-radius: 4px; padding: 4px 8px; font-size: 0.85rem; outline: none;">
+      ${options}
+    </select>
+  `;
+}
+
+export function bindBranchSelector() {
+  const select = document.getElementById('app-bplid-select');
+  if (select) {
+    select.addEventListener('change', (e) => {
+      setBPLID(e.target.value);
+    });
+  }
+}
 
 async function init() {
   const { data: { session } } = await supabase.auth.getSession();
   currentSession = session;
+  if (currentSession) {
+    await loadUserProfile(currentSession.user.id);
+  }
 
-  supabase.auth.onAuthStateChange((event, session) => {
+  supabase.auth.onAuthStateChange(async (event, session) => {
     const wasSignedIn = !!currentSession;
     currentSession = session;
+    
+    if (event === 'SIGNED_IN' && session) {
+      await loadUserProfile(session.user.id);
+    }
     
     if (event === 'SIGNED_OUT' || (event === 'SIGNED_IN' && !wasSignedIn)) {
       route();
@@ -105,8 +173,9 @@ function renderLogin(container) {
 
 async function renderHome(container) {
   container.innerHTML = `
-    <div class="header">
-      <div class="header-title">Olá, Operador</div>
+    <div class="header" style="justify-content: space-between; gap: 8px;">
+      <div class="header-title" style="flex: 1;">Olá, Operador</div>
+      ${renderBranchSelector()}
       <button id="btn-logout" style="color: white; padding: 8px;">
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
       </button>
@@ -115,6 +184,8 @@ async function renderHome(container) {
       <div class="text-center mt-4" style="color: var(--color-text-sec);">Carregando módulos...</div>
     </div>
   `;
+
+  bindBranchSelector();
 
   document.getElementById('btn-logout').addEventListener('click', async () => {
     await supabase.auth.signOut();
@@ -237,6 +308,7 @@ async function renderAmarracao(container) {
     const { data } = await supabase
       .from('pcp_op_amarracao')
       .select('id, pi_numero, item_code, item_name, status, qtd_caixas')
+      .eq('bpl_id', currentBPLID)
       .eq('liberada_producao', true)
       .in('status', ['Pendente', 'Em Produção'])
       .order('created_at', { ascending: true });
@@ -246,12 +318,12 @@ async function renderAmarracao(container) {
   const today = new Date().toISOString().split('T')[0];
 
   container.innerHTML = `
-    <div class="header">
+    <div class="header" style="justify-content: space-between; gap: 8px;">
       <button id="btn-back" style="color: white; padding: 8px; border:none; background:transparent;">
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
       </button>
-      <div class="header-title">Amarração de Caixas</div>
-      <div style="width: 40px;"></div>
+      <div class="header-title" style="flex: 1;">Amarração</div>
+      ${renderBranchSelector()}
     </div>
     
     <div class="container mt-4">
@@ -355,6 +427,8 @@ async function renderAmarracao(container) {
       </div>
     </div>
   `;
+
+  bindBranchSelector();
 
   // Navigation
   document.getElementById('btn-back').addEventListener('click', () => {

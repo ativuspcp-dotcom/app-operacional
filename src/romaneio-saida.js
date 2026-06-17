@@ -1,4 +1,5 @@
 import { supabase } from './supabase.js';
+import { currentBPLID, renderBranchSelector, bindBranchSelector } from './main.js';
 
 let currentView = 'oc_list'; // oc_list, item_list, scanner
 let selectedOC = null;
@@ -27,17 +28,21 @@ async function renderCurrentView() {
   }
   
   containerRef.innerHTML = `
-    <div class="header">
+    <div class="header" style="justify-content: space-between; gap: 8px;">
       <button id="btn-back" style="color: white; padding: 8px; border:none; background:transparent;">
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
       </button>
-      <div class="header-title">${getTitle()}</div>
-      <div style="width: 40px;"></div>
+      <div class="header-title" style="flex: 1;">${getTitle()}</div>
+      ${currentView === 'oc_list' ? renderBranchSelector() : ''}
     </div>
     <div class="container mt-4" id="rs-content">
       <div style="text-align:center; padding: 40px;"><div class="spinner"></div></div>
     </div>
   `;
+
+  if (currentView === 'oc_list') {
+    bindBranchSelector();
+  }
 
   document.getElementById('btn-back').addEventListener('click', handleBack);
 
@@ -78,6 +83,7 @@ async function renderOCList() {
   const { data, error } = await supabase
     .from('expedicao_ordens_carregamento')
     .select('*, expedicao_ordens_carregamento_itens(armazem)')
+    .eq('bplid', currentBPLID)
     .eq('liberado_carregamento', true)
     .eq('status', 'Ativa')
     .order('created_at', { ascending: false });
