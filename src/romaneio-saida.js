@@ -1046,17 +1046,26 @@ async function handleFinalizar() {
        // Não damos throw, pois a OC já está fechada e o SAP gerado!
     }
 
-    alert('Invoices Geradas no SAP e Romaneio Finalizado com Sucesso!');
-    
-    // 5. Reinicia estado e volta pra tela inicial
-    currentView = 'oc_list';
-    scannedPackages = [];
-    selectedOC = null;
-    selectedLine = null;
-    currentRomaneio = null;
-    renderCurrentView();
+      document.getElementById('rs-content').innerHTML = `
+        <div style="text-align:center; padding: 40px;">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2" style="margin-bottom: 16px;">
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline>
+          </svg>
+          <div style="font-weight: 600; font-size: 1.2rem; margin-bottom: 8px;">Sucesso!</div>
+          <div style="font-size: 0.9rem; color: var(--color-text-sec); margin-bottom: 24px;">Invoices Geradas no SAP e Romaneio Finalizado com Sucesso!</div>
+          <button class="btn btn-primary" id="btn-success-ok" style="width: 100%;">Voltar para Lista</button>
+        </div>
+      `;
 
-  } catch (err) {
+      document.getElementById('btn-success-ok').addEventListener('click', async () => {
+        selectedOC = null;
+        selectedLine = null;
+        currentRomaneio = null;
+        scannedPackages = [];
+        currentView = 'oc_list';
+        await renderCurrentView();
+      });
+    } catch (err) {
     console.error(err);
     alert('Erro no fechamento: ' + err.message);
     currentView = 'item_list'; 
@@ -1100,15 +1109,26 @@ async function handleFinalizarTransferencia() {
       .eq('id', selectedOC.id);
     if (ocError) throw ocError;
 
-    alert('Transferência Interna finalizada com sucesso! Os pacotes foram movimentados.');
-    
-    selectedOC = null;
-    selectedLine = null;
-    currentRomaneio = null;
-    scannedPackages = [];
-    currentView = 'oc_list';
-    await renderCurrentView();
-  } catch (err) {
+      document.getElementById('rs-content').innerHTML = `
+        <div style="text-align:center; padding: 40px;">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2" style="margin-bottom: 16px;">
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline>
+          </svg>
+          <div style="font-weight: 600; font-size: 1.2rem; margin-bottom: 8px;">Sucesso!</div>
+          <div style="font-size: 0.9rem; color: var(--color-text-sec); margin-bottom: 24px;">Transferência Interna finalizada com sucesso! Os pacotes foram movimentados.</div>
+          <button class="btn btn-primary" id="btn-success-ok" style="width: 100%;">Voltar para Lista</button>
+        </div>
+      `;
+
+      document.getElementById('btn-success-ok').addEventListener('click', async () => {
+        selectedOC = null;
+        selectedLine = null;
+        currentRomaneio = null;
+        scannedPackages = [];
+        currentView = 'oc_list';
+        await renderCurrentView();
+      });
+    } catch (err) {
     console.error('Error in handleFinalizarTransferencia:', err);
     alert('Erro ao finalizar transferência: ' + err.message);
     
@@ -1228,15 +1248,26 @@ async function handleFinalizarMercadoInterno() {
       .eq('id', selectedOC.id);
     if (ocError) throw ocError;
 
-    alert('Ordem de Mercado Interno finalizada e Faturada no SAP com sucesso!');
-    
-    selectedOC = null;
-    selectedLine = null;
-    currentRomaneio = null;
-    scannedPackages = [];
-    currentView = 'oc_list';
-    await renderCurrentView();
-  } catch (err) {
+      document.getElementById('rs-content').innerHTML = `
+        <div style="text-align:center; padding: 40px;">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2" style="margin-bottom: 16px;">
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline>
+          </svg>
+          <div style="font-weight: 600; font-size: 1.2rem; margin-bottom: 8px;">Sucesso!</div>
+          <div style="font-size: 0.9rem; color: var(--color-text-sec); margin-bottom: 24px;">Ordem de Mercado Interno finalizada e Faturada no SAP.</div>
+          <button class="btn btn-primary" id="btn-success-ok" style="width: 100%;">Voltar para Lista</button>
+        </div>
+      `;
+
+      document.getElementById('btn-success-ok').addEventListener('click', async () => {
+        selectedOC = null;
+        selectedLine = null;
+        currentRomaneio = null;
+        scannedPackages = [];
+        currentView = 'oc_list';
+        await renderCurrentView();
+      });
+    } catch (err) {
     console.error('Error in handleFinalizarMercadoInterno:', err);
     alert('Erro ao finalizar ordem: ' + err.message);
     
