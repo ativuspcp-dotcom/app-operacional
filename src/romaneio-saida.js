@@ -750,6 +750,20 @@ async function handleFinalizar() {
       
     if (linesError) throw linesError;
 
+    // Buscar pecas do amarracoes pois não salvamos no romaneio_itens
+    const qrcodes = scannedPackages.map(p => p.qrcode);
+    if (qrcodes.length > 0) {
+      const { data: amarData } = await supabase.from('amarracoes').select('qrcode, pecas').in('qrcode', qrcodes);
+      if (amarData) {
+        for (const pkg of scannedPackages) {
+          const am = amarData.find(a => a.qrcode === pkg.qrcode);
+          if (am && am.pecas) {
+            pkg.pecas = am.pecas;
+          }
+        }
+      }
+    }
+
     // 2. Agrupar pacotes por Pedido e CardCode
     const groups = {};
     for (const pkg of scannedPackages) {
@@ -1160,6 +1174,20 @@ async function handleFinalizarMercadoInterno() {
       .eq('ordem_id', selectedOC.id);
     
     if (linesError) throw linesError;
+
+    // Buscar pecas do amarracoes pois não salvamos no romaneio_itens
+    const qrcodes = scannedPackages.map(p => p.qrcode);
+    if (qrcodes.length > 0) {
+      const { data: amarData } = await supabase.from('amarracoes').select('qrcode, pecas').in('qrcode', qrcodes);
+      if (amarData) {
+        for (const pkg of scannedPackages) {
+          const am = amarData.find(a => a.qrcode === pkg.qrcode);
+          if (am && am.pecas) {
+            pkg.pecas = am.pecas;
+          }
+        }
+      }
+    }
 
     // 2. Agrupar pacotes por Pedido e Parceiro de Negócios
     const groups = {};
