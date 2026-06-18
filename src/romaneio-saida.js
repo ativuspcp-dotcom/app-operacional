@@ -773,7 +773,7 @@ async function handleFinalizar() {
         };
       }
       
-      const pkgVol = Number(pkg.total_calc) || 0;
+      const pkgVol = Number(pkg.quantidade || pkg.total_calc) || 0;
       groups[key].totalVolume += pkgVol;
       groups[key].totalPackages += 1;
       
@@ -941,7 +941,7 @@ async function handleFinalizar() {
       let totalValor = nfes.reduce((acc, curr) => acc + (parseFloat(curr.valor_documento) || 0), 0);
       let totalVolumeSum = 0;
       for (const pkg of scannedPackages) {
-        totalVolumeSum += parseFloat(pkg.total_calc) || 0;
+        totalVolumeSum += parseFloat(pkg.quantidade || pkg.total_calc) || 0;
       }
       let totalPeso = totalVolumeSum * 500;
 
