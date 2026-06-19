@@ -1170,6 +1170,8 @@ async function handleFinalizarMercadoInterno() {
        const line = ocLines.find(l => l.id === pkg.ordem_item_id);
        if (!line) continue;
        
+       if (line.faturar_sap === false) continue; // Pula itens que não devem ir pro SAP
+       
        const ped = line.pedido_numero || 'SEM_PEDIDO';
        const card = line.cod_pn || '';
        const key = ped + '_' + card;
