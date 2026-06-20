@@ -2,6 +2,17 @@ import './style.css';
 import { supabase } from './supabase.js';
 import { renderRomaneioSaida } from './romaneio-saida.js';
 
+// Força o recarregamento automático da página quando houver uma nova versão do app (PWA)
+if ('serviceWorker' in navigator) {
+  let refreshing = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!refreshing) {
+      refreshing = true;
+      window.location.reload();
+    }
+  });
+}
+
 let currentSession = null;
 let currentPermissions = [];
 export let userProfile = null;
