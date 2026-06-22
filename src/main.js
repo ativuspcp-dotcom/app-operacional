@@ -360,6 +360,15 @@ async function renderAmarracao(container) {
     if (data) ops = data;
   } catch(e) { console.error('Error fetching OPs:', e); }
 
+  let activeOperators = [];
+  try {
+    const { data } = await supabase
+      .from('app_apontadores')
+      .select('id, nome_completo, pin')
+      .eq('status', 'ATIVO');
+    if (data) activeOperators = data;
+  } catch(e) { console.error('Error fetching operators:', e); }
+
   const today = new Date().toISOString().split('T')[0];
 
   container.innerHTML = `
@@ -640,14 +649,9 @@ async function renderAmarracao(container) {
       formError.textContent = '';
       
       try {
-        const { data, error } = await withTimeout(supabase
-          .from('app_apontadores')
-          .select('id, nome_completo')
-          .eq('pin', val)
-          .eq('status', 'ATIVO')
-          .single(), 8000);
+        const data = activeOperators.find(op => String(op.pin) === String(val));
           
-        if (error || !data) {
+        if (!data) {
           formError.textContent = 'PIN Inválido ou Inativo.';
           respInput.value = '';
           respIdInput.value = '';
@@ -664,7 +668,7 @@ async function renderAmarracao(container) {
         }
       } catch (err) {
         console.error(err);
-        formError.textContent = 'Sem conexão. Tente novamente.';
+        formError.textContent = 'Erro ao validar. Tente novamente.';
         respInput.value = '';
         respIdInput.value = '';
         pinInput.disabled = false;
