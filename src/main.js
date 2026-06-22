@@ -18,6 +18,20 @@ let currentPermissions = [];
 export let userProfile = null;
 export let currentBPLID = localStorage.getItem('app_bplid') ? parseInt(localStorage.getItem('app_bplid')) : 1;
 
+export async function withTimeout(promise, ms = 10000) {
+  let timeoutId;
+  const timeoutPromise = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new Error('Tempo de conexǜo esgotado. Verifique sua internet.'));
+    }, ms);
+  });
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 export function setBPLID(id) {
   currentBPLID = parseInt(id);
   localStorage.setItem('app_bplid', currentBPLID);
@@ -203,29 +217,39 @@ async function renderHome(container) {
   });
 
   try {
-    // Fetch permissions from user_module_permissions joined with modules
-    const { data: perms, error } = await supabase
-      .from('user_module_permissions')
-      .select(`
-        can_view,
-        modules (
-          name, slug, icon, type, group_name
-        )
-      `)
-      .eq('user_id', currentSession.user.id)
-      .eq('can_view', true);
+    let perms = currentPermissions;
+    
+    if (!perms || perms.length === 0) {
+      const { data, error } = await withTimeout(supabase
+        .from('user_module_permissions')
+        .select(`
+          can_view,
+          modules (
+            name, slug, icon, type, group_name
+          )
+        `)
+        .eq('user_id', currentSession.user.id)
+        .eq('can_view', true), 10000);
+  
+      if (error) {
+        document.getElementById('home-content').innerHTML = `<div class="text-center mt-4" style="color: #ef4444;">Erro ao carregar permissões: ${error.message}</div>`;
+        return;
+      }
+      
+      perms = data || [];
+      currentPermissions = perms;
+    }
 
-    if (error) {
-      document.getElementById('home-content').innerHTML = `<div class="text-center mt-4" style="color: #ef4444;">Erro ao carregar permissões: ${error.message}</div>`;
+    if (!perms || perms.length === 0) {
+      document.getElementById('home-content').innerHTML = `
+        <div class="text-center mt-4" style="padding: 24px; background: white; border-radius: 12px;">
+          <h3>Sem Acesso</h3>
+          <p style="color: var(--color-text-sec); margin-top: 8px; font-size: 0.9rem;">Esta estação não tem nenhum módulo liberado. Configure no Portal.</p>
+        </div>
+      `;
       return;
     }
 
-    if (!perms) {
-      document.getElementById('home-content').innerHTML = `<div class="text-center mt-4" style="color: #ef4444;">Erro ao carregar permissões: Resposta vazia</div>`;
-      return;
-    }
-
-    // Filter only app modules
     const appModules = perms.filter(p => p.modules && p.modules.type === 'app').map(p => p.modules);
 
     if (appModules.length === 0) {
@@ -247,7 +271,6 @@ async function renderHome(container) {
       const card = document.createElement('div');
       card.className = 'module-card';
       
-      // Default factory icon
       let iconSvg = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>';
       if (mod.slug === 'app_amarracao') {
         iconSvg = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>';
@@ -282,7 +305,6 @@ async function renderHome(container) {
 }
 
 async function renderAmarracao(container) {
-  // Fetch items from SAP B1 Service Layer
   let realItems = [];
   try {
     const url = "/api/Items?$select=ItemCode,ItemName,ForeignName,ItemsGroupCode,SalesFactor1,SalesFactor2,SalesFactor3,SalesFactor4,U_Quality&$filter=ItemsGroupCode eq 106 and Properties1 eq 'tYES'";
@@ -308,7 +330,7 @@ async function renderAmarracao(container) {
       const data = await res.json();
       const itemsData = data.value || [];
       realItems = itemsData.map(d => ({
-        id: d.ItemCode, // using ItemCode as ID
+        id: d.ItemCode, 
         cod: d.ItemCode,
         nome: d.ForeignName || d.ItemName,
         qualidade: qualityMap[d.U_Quality] || d.U_Quality || '-',
@@ -326,7 +348,6 @@ async function renderAmarracao(container) {
   }
 
 
-  // Busca as OPs de Amarração liberadas
   let ops = [];
   try {
     const { data } = await supabase
@@ -454,12 +475,10 @@ async function renderAmarracao(container) {
 
   bindBranchSelector();
 
-  // Navigation
   document.getElementById('btn-back').addEventListener('click', () => {
     window.location.hash = '/';
   });
 
-  // Toggle button logic
   let localProd = 'PRINCIPAL';
   let localEstoque = 'PLUS';
 
@@ -477,7 +496,6 @@ async function renderAmarracao(container) {
   setupToggles('toggle-local-prod', val => localProd = val);
   setupToggles('toggle-local-estoque', val => localEstoque = val);
 
-  // Auto-fill Item logic via custom dropdown
   let selectedItem = null;
   const searchInput = document.getElementById('item_search');
   const dropdown = document.getElementById('item_dropdown');
@@ -564,8 +582,8 @@ async function renderAmarracao(container) {
     opSelect.disabled = isDescarte;
     
     if (isDescarte) {
-      opSelect.value = ''; // clear OP selection
-      searchInput.readOnly = false; // allow typing
+      opSelect.value = '';
+      searchInput.readOnly = false;
       selectedItem = null;
       document.getElementById('cod_item').value = '';
       document.getElementById('qualidade').value = '';
@@ -583,7 +601,6 @@ async function renderAmarracao(container) {
     }
   });
 
-  // Logic for OP Selection
   opSelect.addEventListener('change', (e) => {
     const opt = e.target.selectedOptions[0];
     const itemCode = opt ? opt.getAttribute('data-item') : null;
@@ -596,11 +613,11 @@ async function renderAmarracao(container) {
         document.getElementById('qualidade').value = item.qualidade;
         if (item.pecas) document.getElementById('pecas').value = item.pecas;
         calcTotalM3();
-        searchInput.readOnly = true; // Block manual search when OP is selected
+        searchInput.readOnly = true;
         dropdown.style.display = 'none';
       }
     } else {
-      searchInput.readOnly = false; // Unblock
+      searchInput.readOnly = false;
       searchInput.value = '';
       document.getElementById('cod_item').value = '';
       document.getElementById('qualidade').value = '';
@@ -608,7 +625,6 @@ async function renderAmarracao(container) {
     }
   });
 
-  // PIN validation logic
   const pinInput = document.getElementById('pin');
   const respInput = document.getElementById('responsavel_nome');
   const respIdInput = document.getElementById('responsavel_id');
@@ -623,27 +639,38 @@ async function renderAmarracao(container) {
       respInput.value = 'Buscando...';
       formError.textContent = '';
       
-      const { data, error } = await supabase
-        .from('app_apontadores')
-        .select('id, nome_completo')
-        .eq('pin', val)
-        .eq('status', 'ATIVO')
-        .single();
-        
-      if (error || !data) {
-        formError.textContent = 'PIN Inválido ou Inativo.';
+      try {
+        const { data, error } = await withTimeout(supabase
+          .from('app_apontadores')
+          .select('id, nome_completo')
+          .eq('pin', val)
+          .eq('status', 'ATIVO')
+          .single(), 8000);
+          
+        if (error || !data) {
+          formError.textContent = 'PIN Inválido ou Inativo.';
+          respInput.value = '';
+          respIdInput.value = '';
+          pinInput.disabled = false;
+          pinInput.value = '';
+          pinInput.focus();
+          btnSave.disabled = true;
+        } else {
+          respInput.value = data.nome_completo;
+          respIdInput.value = data.id;
+          respInput.classList.add('success-text');
+          pinInput.disabled = false;
+          btnSave.disabled = false;
+        }
+      } catch (err) {
+        console.error(err);
+        formError.textContent = 'Sem conexão. Tente novamente.';
         respInput.value = '';
         respIdInput.value = '';
         pinInput.disabled = false;
         pinInput.value = '';
         pinInput.focus();
         btnSave.disabled = true;
-      } else {
-        respInput.value = data.nome_completo;
-        respIdInput.value = data.id;
-        respInput.classList.add('success-text');
-        pinInput.disabled = false;
-        btnSave.disabled = false;
       }
     } else {
       respInput.value = '';
@@ -678,10 +705,10 @@ async function renderAmarracao(container) {
       if (opId) {
         const selectedOp = ops.find(o => o.id === opId);
         if (selectedOp && selectedOp.qtd_caixas > 0) {
-          const { count, error: countError } = await supabase
+          const { count, error: countError } = await withTimeout(supabase
             .from('amarracoes')
             .select('id', { count: 'exact', head: true })
-            .eq('op_id', opId);
+            .eq('op_id', opId), 10000);
             
           if (!countError && count >= selectedOp.qtd_caixas) {
             const proceed = window.confirm(`AVISO: A OP selecionada previa apenas ${selectedOp.qtd_caixas} pacotes e este limite já foi atingido.\n\nDeseja apontar e adicionar este pacote à OP mesmo assim?`);
@@ -713,11 +740,11 @@ async function renderAmarracao(container) {
         op_id: opId
       };
 
-      const { data: insertData, error: insertError } = await supabase
+      const { data: insertData, error: insertError } = await withTimeout(supabase
         .from('amarracoes')
         .insert(payload)
         .select()
-        .single();
+        .single(), 10000);
       
       if (insertError) throw insertError;
 
