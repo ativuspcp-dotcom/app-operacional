@@ -850,5 +850,6 @@ async function renderAmarracao(container) {
 }
 
 init();
-w i n d o w . s y n c A p p D a t a   =   s y n c A p p D a t a ;  
- 
+window.syncAppData = syncAppData;
+
+window.syncAppData = syncAppData;
