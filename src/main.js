@@ -22,6 +22,7 @@ export let cachedSapItems = [];
 export let cachedOps = [];
 export let activeOperators = [];
 export let isSyncing = false;
+export let initialLoadComplete = false;
 
 // CSS for sync button animation
 const style = document.createElement('style');
@@ -87,6 +88,10 @@ export async function syncAppData() {
   } finally {
     isSyncing = false;
     syncBtns.forEach(b => b.classList.remove('syncing'));
+    if (!initialLoadComplete) {
+      initialLoadComplete = true;
+      route();
+    }
   }
 }
 
@@ -204,7 +209,21 @@ async function route() {
 
   if (path === '/login') {
     renderLogin(app);
-  } else if (path === '/') {
+    return;
+  }
+
+  if (!initialLoadComplete) {
+    app.innerHTML = `
+      <div style="min-height: 100vh; display: flex; flex-direction: column; justify-content: center; align-items: center; background: var(--dark-500);">
+        <div class="spinner" style="border-top-color: var(--green-400); width: 40px; height: 40px; border-width: 4px;"></div>
+        <div style="color: white; margin-top: 16px; font-weight: 600;">Sincronizando Dados...</div>
+        <div style="color: var(--color-text-sec); font-size: 0.85rem; margin-top: 8px;">Por favor, aguarde.</div>
+      </div>
+    `;
+    return;
+  }
+
+  if (path === '/') {
     await renderHome(app);
   } else if (path === '/amarracao') {
     renderAmarracao(app);
