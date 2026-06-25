@@ -18,6 +18,78 @@ let currentPermissions = [];
 export let userProfile = null;
 export let currentBPLID = localStorage.getItem('app_bplid') ? parseInt(localStorage.getItem('app_bplid')) : 1;
 
+export let cachedSapItems = [];
+export let cachedOps = [];
+export let activeOperators = [];
+export let isSyncing = false;
+
+// CSS for sync button animation
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes spin { 100% { transform: rotate(360deg); } }
+  .syncing svg { animation: spin 1s linear infinite; }
+`;
+document.head.appendChild(style);
+
+export async function syncAppData() {
+  if (isSyncing) return;
+  isSyncing = true;
+  
+  const syncBtns = document.querySelectorAll('.btn-global-sync');
+  syncBtns.forEach(b => b.classList.add('syncing'));
+
+  try {
+    // Fetch SAP Items
+    const url = "/api/Items?$select=ItemCode,ItemName,ForeignName,ItemsGroupCode,SalesFactor1,SalesFactor2,SalesFactor3,SalesFactor4,U_Quality&$filter=ItemsGroupCode eq 106 and Properties1 eq 'tYES'";
+    const res = await withTimeout(fetch(url, {
+      method: 'GET',
+      headers: { 
+        'Content-Type': 'application/json',
+        'ngrok-skip-browser-warning': 'true',
+        'Prefer': 'odata.maxpagesize=0'
+      }
+    }), 15000);
+    
+    if (res.ok) {
+      const data = await res.json();
+      const qualityMap = { '001': '1ª QUALIDADE', '002': '1ª PERMUTA', '003': '2ª QUALIDADE', '004': '3ª QUALIDADE', '005': 'BG', '006': 'SG' };
+      cachedSapItems = (data.value || []).map(d => ({
+        id: d.ItemCode, cod: d.ItemCode, nome: d.ForeignName || d.ItemName,
+        qualidade: qualityMap[d.U_Quality] || d.U_Quality || '-', uQualityCode: d.U_Quality,
+        comprimento: d.SalesFactor1, largura: d.SalesFactor2, espessura: d.SalesFactor3, pecas: d.SalesFactor4
+      }));
+    }
+
+    // Fetch OPs
+    const { data: opData } = await withTimeout(supabase
+      .from('pcp_op_amarracao')
+      .select('id, pi_numero, item_code, item_name, status, qtd_caixas')
+      .eq('bpl_id', currentBPLID)
+      .eq('liberada_producao', true)
+      .in('status', ['Pendente', 'Em Produção'])
+      .order('created_at', { ascending: true }), 10000);
+    if (opData) cachedOps = opData;
+
+    // Fetch Operators
+    const { data: opersData } = await withTimeout(supabase
+      .from('app_apontadores')
+      .select('id, nome_completo, pin')
+      .eq('status', 'ATIVO'), 10000);
+    if (opersData) activeOperators = opersData;
+
+    // Sync Romaneios if available
+    if (window.syncRomaneioData) {
+      await window.syncRomaneioData();
+    }
+  } catch (err) {
+    console.error('Sync error:', err);
+    alert('Falha ao sincronizar dados: ' + err.message);
+  } finally {
+    isSyncing = false;
+    syncBtns.forEach(b => b.classList.remove('syncing'));
+  }
+}
+
 export async function withTimeout(promise, ms = 10000) {
   let timeoutId;
   const timeoutPromise = new Promise((_, reject) => {
@@ -96,6 +168,7 @@ async function init() {
   currentSession = session;
   if (currentSession) {
     await loadUserProfile(currentSession.user.id);
+    syncAppData(); // Warm up cache on load
   }
 
   supabase.auth.onAuthStateChange(async (event, session) => {
@@ -104,6 +177,7 @@ async function init() {
     
     if (event === 'SIGNED_IN' && session) {
       await loadUserProfile(session.user.id);
+      syncAppData(); // Warm up cache on login
     }
     
     if (event === 'SIGNED_OUT' || (event === 'SIGNED_IN' && !wasSignedIn)) {
@@ -200,8 +274,11 @@ async function renderHome(container) {
   container.innerHTML = `
     <div class="header" style="justify-content: space-between; gap: 8px;">
       <div class="header-title" style="flex: 1;">Olá, Operador</div>
+      <button class="btn-global-sync" onclick="syncAppData()" style="color: white; padding: 8px; border:none; background:transparent;" title="Sincronizar Dados">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+      </button>
       ${renderBranchSelector()}
-      <button id="btn-logout" style="color: white; padding: 8px;">
+      <button id="btn-logout" style="color: white; padding: 8px; border:none; background:transparent;" title="Sair">
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
       </button>
     </div>
@@ -305,69 +382,8 @@ async function renderHome(container) {
 }
 
 async function renderAmarracao(container) {
-  let realItems = [];
-  try {
-    const url = "/api/Items?$select=ItemCode,ItemName,ForeignName,ItemsGroupCode,SalesFactor1,SalesFactor2,SalesFactor3,SalesFactor4,U_Quality&$filter=ItemsGroupCode eq 106 and Properties1 eq 'tYES'";
-    const res = await fetch(url, {
-      method: 'GET',
-      headers: { 
-        'Content-Type': 'application/json',
-        'ngrok-skip-browser-warning': 'true',
-        'Prefer': 'odata.maxpagesize=0'
-      }
-    });
-    
-    const qualityMap = {
-      '001': '1ª QUALIDADE',
-      '002': '1ª PERMUTA',
-      '003': '2ª QUALIDADE',
-      '004': '3ª QUALIDADE',
-      '005': 'BG',
-      '006': 'SG'
-    };
-
-    if (res.ok) {
-      const data = await res.json();
-      const itemsData = data.value || [];
-      realItems = itemsData.map(d => ({
-        id: d.ItemCode, 
-        cod: d.ItemCode,
-        nome: d.ForeignName || d.ItemName,
-        qualidade: qualityMap[d.U_Quality] || d.U_Quality || '-',
-        uQualityCode: d.U_Quality,
-        comprimento: d.SalesFactor1,
-        largura: d.SalesFactor2,
-        espessura: d.SalesFactor3,
-        pecas: d.SalesFactor4
-      }));
-    } else {
-      console.error('Error fetching SAP items:', res.status, res.statusText);
-    }
-  } catch (error) {
-    console.error('Network error fetching SAP items:', error);
-  }
-
-
-  let ops = [];
-  try {
-    const { data } = await supabase
-      .from('pcp_op_amarracao')
-      .select('id, pi_numero, item_code, item_name, status, qtd_caixas')
-      .eq('bpl_id', currentBPLID)
-      .eq('liberada_producao', true)
-      .in('status', ['Pendente', 'Em Produção'])
-      .order('created_at', { ascending: true });
-    if (data) ops = data;
-  } catch(e) { console.error('Error fetching OPs:', e); }
-
-  let activeOperators = [];
-  try {
-    const { data } = await supabase
-      .from('app_apontadores')
-      .select('id, nome_completo, pin')
-      .eq('status', 'ATIVO');
-    if (data) activeOperators = data;
-  } catch(e) { console.error('Error fetching operators:', e); }
+  let realItems = cachedSapItems;
+  let ops = cachedOps;
 
   const today = new Date().toISOString().split('T')[0];
 
@@ -377,6 +393,9 @@ async function renderAmarracao(container) {
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
       </button>
       <div class="header-title" style="flex: 1;">Amarração</div>
+      <button class="btn-global-sync" onclick="syncAppData()" style="color: white; padding: 8px; border:none; background:transparent;" title="Sincronizar Dados">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+      </button>
       ${renderBranchSelector()}
     </div>
     
@@ -831,3 +850,5 @@ async function renderAmarracao(container) {
 }
 
 init();
+w i n d o w . s y n c A p p D a t a   =   s y n c A p p D a t a ;  
+ 

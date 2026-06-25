@@ -1,5 +1,36 @@
 import { supabase } from './supabase.js';
-import { currentBPLID, renderBranchSelector, bindBranchSelector } from './main.js';
+import { currentBPLID, renderBranchSelector, bindBranchSelector, withTimeout } from './main.js';
+
+let cachedOCs = [];
+let cachedOCLines = [];
+let cachedRomaneios = [];
+
+window.syncRomaneioData = async function() {
+  try {
+    const { data: ocs } = await withTimeout(supabase
+      .from('expedicao_ordens_carregamento')
+      .select('*, expedicao_ordens_carregamento_itens(armazem)')
+      .eq('bplid', currentBPLID)
+      .eq('liberado_carregamento', true)
+      .eq('status', 'Ativa')
+      .order('created_at', { ascending: false }), 10000);
+    if (ocs) cachedOCs = ocs;
+
+    const { data: lines } = await withTimeout(supabase
+      .from('expedicao_ordens_carregamento_itens')
+      .select('*')
+      .order('pedido_numero', { ascending: true }), 10000);
+    if (lines) cachedOCLines = lines;
+
+    const { data: roms } = await withTimeout(supabase
+      .from('expedicao_romaneios')
+      .select('*, expedicao_romaneio_itens(*)'), 10000);
+    if (roms) cachedRomaneios = roms;
+  } catch (err) {
+    console.error('Erro ao sincronizar dados de romaneio:', err);
+    throw err;
+  }
+};
 
 let currentView = 'oc_list'; // oc_list, item_list, scanner
 let selectedOC = null;
@@ -40,6 +71,9 @@ async function renderCurrentView() {
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
       </button>
       <div class="header-title" style="flex: 1;">${getTitle()}</div>
+      <button class="btn-global-sync" onclick="syncAppData()" style="color: white; padding: 8px; border:none; background:transparent;" title="Sincronizar Dados">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+      </button>
       ${currentView === 'oc_list' ? renderBranchSelector() : ''}
     </div>
     <div class="container mt-4" id="rs-content">
@@ -87,15 +121,7 @@ function handleBack() {
 }
 
 async function renderOCList() {
-  const { data, error } = await supabase
-    .from('expedicao_ordens_carregamento')
-    .select('*, expedicao_ordens_carregamento_itens(armazem)')
-    .eq('bplid', currentBPLID)
-    .eq('liberado_carregamento', true)
-    .eq('status', 'Ativa')
-    .order('created_at', { ascending: false });
-
-  if (error) throw error;
+  const data = cachedOCs;
 
   const content = document.getElementById('rs-content');
   if (data.length === 0) {
@@ -166,19 +192,10 @@ async function renderOCList() {
 }
 
 async function renderItemList() {
-  const { data, error } = await supabase
-    .from('expedicao_ordens_carregamento_itens')
-    .select('*')
-    .eq('ordem_id', selectedOC.id)
-    .order('pedido_numero', { ascending: true });
-
-  if (error) throw error;
+  const data = cachedOCLines.filter(line => line.ordem_id === selectedOC.id);
 
   // Fetch past romaneios to calculate correct progress including previous sessions
-  const { data: allRoms } = await supabase
-    .from('expedicao_romaneios')
-    .select('*, expedicao_romaneio_itens(*)')
-    .eq('ordem_carregamento_id', selectedOC.id);
+  const allRoms = cachedRomaneios.filter(r => r.ordem_carregamento_id === selectedOC.id);
     
   currentRomaneio = allRoms?.find(r => r.status === 'Em Andamento') || null;
   const pastRoms = allRoms?.filter(r => r.status === 'Finalizado') || [];
