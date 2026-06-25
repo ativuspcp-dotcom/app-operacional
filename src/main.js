@@ -39,6 +39,16 @@ export async function syncAppData() {
   const syncBtns = document.querySelectorAll('.btn-global-sync');
   syncBtns.forEach(b => b.classList.add('syncing'));
 
+  let syncToast = document.getElementById('sync-toast');
+  if (!syncToast) {
+    syncToast = document.createElement('div');
+    syncToast.id = 'sync-toast';
+    syncToast.style.cssText = 'position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); background: var(--dark-500); color: white; padding: 12px 24px; border-radius: 30px; font-size: 0.9rem; z-index: 9999; box-shadow: 0 4px 12px rgba(0,0,0,0.15); display: flex; align-items: center; gap: 12px; transition: opacity 0.3s; pointer-events: none;';
+    document.body.appendChild(syncToast);
+  }
+  syncToast.innerHTML = '<div class="spinner" style="width: 16px; height: 16px; border-width: 2px; border-top-color: var(--green-400);"></div> <span style="font-weight: 500;">Sincronizando...</span>';
+  syncToast.style.opacity = '1';
+
   try {
     // Fetch SAP Items
     const url = "/api/Items?$select=ItemCode,ItemName,ForeignName,ItemsGroupCode,SalesFactor1,SalesFactor2,SalesFactor3,SalesFactor4,U_Quality&$filter=ItemsGroupCode eq 106 and Properties1 eq 'tYES'";
@@ -88,6 +98,15 @@ export async function syncAppData() {
   } finally {
     isSyncing = false;
     syncBtns.forEach(b => b.classList.remove('syncing'));
+    
+    let syncToast = document.getElementById('sync-toast');
+    if (syncToast) {
+      syncToast.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--green-400);"><polyline points="20 6 9 17 4 12"></polyline></svg> <span style="font-weight: 500;">Atualizado!</span>';
+      setTimeout(() => {
+        syncToast.style.opacity = '0';
+      }, 2500);
+    }
+
     if (!initialLoadComplete) {
       initialLoadComplete = true;
       route();
