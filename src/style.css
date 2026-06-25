@@ -23,6 +23,7 @@ body {
   background-color: var(--color-bg);
   color: var(--color-text);
   overflow-x: hidden;
+  overscroll-behavior-y: none; /* Prevent pull-to-refresh in PWA */
   user-select: none; /* Prevent text selection in PWA */
 }
 
@@ -246,3 +247,4 @@ input, button, select, textarea {
   color: var(--color-text-sec);
   font-style: italic;
 }
+html { overscroll-behavior-y: none; }
