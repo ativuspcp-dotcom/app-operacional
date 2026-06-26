@@ -769,7 +769,7 @@ async function renderAmarracao(container) {
           const { count, error: countError } = await withTimeout(supabase
             .from('amarracoes')
             .select('id', { count: 'exact', head: true })
-            .eq('op_id', opId), 10000);
+            .eq('op_id', opId), 20000);
             
           if (!countError && count >= selectedOp.qtd_caixas) {
             const proceed = window.confirm(`AVISO: A OP selecionada previa apenas ${selectedOp.qtd_caixas} pacotes e este limite já foi atingido.\n\nDeseja apontar e adicionar este pacote à OP mesmo assim?`);
@@ -805,7 +805,7 @@ async function renderAmarracao(container) {
         .from('amarracoes')
         .insert(payload)
         .select()
-        .single(), 10000);
+        .single(), 30000);
       
       if (insertError) throw insertError;
 
@@ -837,14 +837,14 @@ async function renderAmarracao(container) {
 
         let printerMsg = '';
         try {
-          const sapRes = await fetch(sapEndpoint, {
+          const sapRes = await withTimeout(fetch(sapEndpoint, {
             method: 'POST',
             headers: { 
               'Content-Type': 'application/json',
               'ngrok-skip-browser-warning': 'true'
             },
             body: JSON.stringify(sapPayload)
-          });
+          }), 30000);
           
           const responseText = await sapRes.text();
           
