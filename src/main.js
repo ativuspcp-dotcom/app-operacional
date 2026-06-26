@@ -59,7 +59,7 @@ export async function syncAppData() {
         'ngrok-skip-browser-warning': 'true',
         'Prefer': 'odata.maxpagesize=0'
       }
-    }), 30000);
+    }), 60000);
     
     if (res.ok) {
       const data = await res.json();
@@ -78,14 +78,14 @@ export async function syncAppData() {
       .eq('bpl_id', currentBPLID)
       .eq('liberada_producao', true)
       .in('status', ['Pendente', 'Em Produção'])
-      .order('created_at', { ascending: true }), 30000);
+      .order('created_at', { ascending: true }), 60000);
     if (opData) cachedOps = opData;
 
     // Fetch Operators
     const { data: opersData } = await withTimeout(supabase
       .from('app_apontadores')
       .select('id, nome_completo, pin')
-      .eq('status', 'ATIVO'), 30000);
+      .eq('status', 'ATIVO'), 60000);
     if (opersData) activeOperators = opersData;
 
     // Sync Romaneios if available
@@ -312,9 +312,6 @@ async function renderHome(container) {
   container.innerHTML = `
     <div class="header" style="justify-content: space-between; gap: 8px;">
       <div class="header-title" style="flex: 1;">Olá, Operador</div>
-      <button class="btn-global-sync" onclick="syncAppData()" style="color: white; padding: 8px; border:none; background:transparent;" title="Sincronizar Dados">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
-      </button>
       ${renderBranchSelector()}
       <button id="btn-logout" style="color: white; padding: 8px; border:none; background:transparent;" title="Sair">
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
@@ -431,9 +428,6 @@ async function renderAmarracao(container) {
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
       </button>
       <div class="header-title" style="flex: 1;">Amarração</div>
-      <button class="btn-global-sync" onclick="syncAppData()" style="color: white; padding: 8px; border:none; background:transparent;" title="Sincronizar Dados">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
-      </button>
       ${renderBranchSelector()}
     </div>
     
@@ -805,7 +799,7 @@ async function renderAmarracao(container) {
         .from('amarracoes')
         .insert(payload)
         .select()
-        .single(), 30000);
+        .single(), 60000);
       
       if (insertError) throw insertError;
 
@@ -844,7 +838,7 @@ async function renderAmarracao(container) {
               'ngrok-skip-browser-warning': 'true'
             },
             body: JSON.stringify(sapPayload)
-          }), 30000);
+          }), 60000);
           
           const responseText = await sapRes.text();
           

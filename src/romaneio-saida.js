@@ -13,18 +13,18 @@ window.syncRomaneioData = async function() {
       .eq('bplid', currentBPLID)
       .eq('liberado_carregamento', true)
       .eq('status', 'Ativa')
-      .order('created_at', { ascending: false }), 30000);
+      .order('created_at', { ascending: false }), 60000);
     if (ocs) cachedOCs = ocs;
 
     const { data: lines } = await withTimeout(supabase
       .from('expedicao_ordens_carregamento_itens')
       .select('*')
-      .order('pedido_numero', { ascending: true }), 30000);
+      .order('pedido_numero', { ascending: true }), 60000);
     if (lines) cachedOCLines = lines;
 
     const { data: roms } = await withTimeout(supabase
       .from('expedicao_romaneios')
-      .select('*, expedicao_romaneio_itens(*)'), 30000);
+      .select('*, expedicao_romaneio_itens(*)'), 60000);
     if (roms) cachedRomaneios = roms;
   } catch (err) {
     console.error('Erro ao sincronizar dados de romaneio:', err);
@@ -40,11 +40,43 @@ let scannedPackages = []; // array of amarracoes rows
 let containerRef = null;
 let currentScanner = null;
 
+function saveState() {
+  const state = {
+    view: currentView,
+    ocId: selectedOC ? selectedOC.id : null,
+    lineId: selectedLine ? selectedLine.id : null,
+  };
+  sessionStorage.setItem('romaneioState', JSON.stringify(state));
+}
+
 export async function renderRomaneioSaida(container) {
   containerRef = container;
-  currentView = 'oc_list';
-  selectedOC = null;
-  selectedLine = null;
+  
+  const savedStateStr = sessionStorage.getItem('romaneioState');
+  if (savedStateStr) {
+    try {
+      const state = JSON.parse(savedStateStr);
+      currentView = state.view || 'oc_list';
+      if (state.ocId) {
+        selectedOC = cachedOCs.find(o => o.id === state.ocId) || null;
+      }
+      if (state.lineId) {
+        selectedLine = cachedOCLines.find(l => l.id === state.lineId) || null;
+      }
+      // If we couldn't find the objects in cache, fallback to list
+      if (currentView === 'item_list' && !selectedOC) currentView = 'oc_list';
+      if (currentView === 'scanner' && !selectedLine) currentView = 'item_list';
+    } catch (e) {
+      currentView = 'oc_list';
+      selectedOC = null;
+      selectedLine = null;
+    }
+  } else {
+    currentView = 'oc_list';
+    selectedOC = null;
+    selectedLine = null;
+  }
+  
   currentRomaneio = null;
   scannedPackages = [];
   
@@ -71,9 +103,6 @@ async function renderCurrentView() {
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
       </button>
       <div class="header-title" style="flex: 1;">${getTitle()}</div>
-      <button class="btn-global-sync" onclick="syncAppData()" style="color: white; padding: 8px; border:none; background:transparent;" title="Sincronizar Dados">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
-      </button>
       ${currentView === 'oc_list' ? renderBranchSelector() : ''}
     </div>
     <div class="container mt-4" id="rs-content">
