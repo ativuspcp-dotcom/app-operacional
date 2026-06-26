@@ -59,7 +59,7 @@ export async function syncAppData() {
         'ngrok-skip-browser-warning': 'true',
         'Prefer': 'odata.maxpagesize=0'
       }
-    }), 15000);
+    }), 30000);
     
     if (res.ok) {
       const data = await res.json();
@@ -78,14 +78,14 @@ export async function syncAppData() {
       .eq('bpl_id', currentBPLID)
       .eq('liberada_producao', true)
       .in('status', ['Pendente', 'Em Produção'])
-      .order('created_at', { ascending: true }), 10000);
+      .order('created_at', { ascending: true }), 30000);
     if (opData) cachedOps = opData;
 
     // Fetch Operators
     const { data: opersData } = await withTimeout(supabase
       .from('app_apontadores')
       .select('id, nome_completo, pin')
-      .eq('status', 'ATIVO'), 10000);
+      .eq('status', 'ATIVO'), 30000);
     if (opersData) activeOperators = opersData;
 
     // Sync Romaneios if available

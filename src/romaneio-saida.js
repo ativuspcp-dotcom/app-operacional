@@ -13,18 +13,18 @@ window.syncRomaneioData = async function() {
       .eq('bplid', currentBPLID)
       .eq('liberado_carregamento', true)
       .eq('status', 'Ativa')
-      .order('created_at', { ascending: false }), 10000);
+      .order('created_at', { ascending: false }), 30000);
     if (ocs) cachedOCs = ocs;
 
     const { data: lines } = await withTimeout(supabase
       .from('expedicao_ordens_carregamento_itens')
       .select('*')
-      .order('pedido_numero', { ascending: true }), 10000);
+      .order('pedido_numero', { ascending: true }), 30000);
     if (lines) cachedOCLines = lines;
 
     const { data: roms } = await withTimeout(supabase
       .from('expedicao_romaneios')
-      .select('*, expedicao_romaneio_itens(*)'), 10000);
+      .select('*, expedicao_romaneio_itens(*)'), 30000);
     if (roms) cachedRomaneios = roms;
   } catch (err) {
     console.error('Erro ao sincronizar dados de romaneio:', err);
