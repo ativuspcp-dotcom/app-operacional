@@ -740,6 +740,7 @@ async function renderAmarracao(container) {
     e.preventDefault();
     formError.textContent = '';
     formSuccess.textContent = '';
+    console.log('[AMARRACAO LOG-1] Submit disparado. selectedItem:', !!selectedItem, '| respIdInput:', respIdInput.value);
 
     if (!selectedItem) {
       formError.textContent = 'Selecione um item válido da lista.';
@@ -755,6 +756,7 @@ async function renderAmarracao(container) {
 
     try {
       const opId = document.getElementById('op_select').value || null;
+      console.log('[AMARRACAO LOG-2] opId:', opId);
 
       // VALIDATION: Check if OP limit is reached
       // NOTA: Usamos select('id') simples (sem count:exact) para evitar requisição HTTP HEAD
@@ -797,12 +799,14 @@ async function renderAmarracao(container) {
         tablet_user_id: currentSession.user.id,
         op_id: opId
       };
+      console.log('[AMARRACAO LOG-3] Payload montado. Chamando supabase.insert...');
 
       const { data: insertData, error: insertError } = await withTimeout(supabase
         .from('amarracoes')
         .insert(payload)
         .select()
         .single(), 15000);
+      console.log('[AMARRACAO LOG-4] supabase.insert retornou. insertError:', insertError);
       
       if (insertError) throw insertError;
 
@@ -872,9 +876,10 @@ async function renderAmarracao(container) {
       setTimeout(() => { formSuccess.textContent = ''; }, 3000);
       
     } catch (err) {
-      console.error(err);
+      console.error('[AMARRACAO ERROR] Erro capturado:', err.message);
+      console.error('[AMARRACAO STACK]', err.stack);
       if (err.message.includes('Tempo de conex')) {
-        formError.textContent = 'Conexão travada pelo navegador. Forçando recarregamento da tela...';
+        formError.textContent = 'Conexão travada. Recarregando...';
         setTimeout(() => window.location.reload(true), 2000);
       } else {
         formError.textContent = 'Erro ao salvar: ' + err.message;
