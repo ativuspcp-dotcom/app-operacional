@@ -695,7 +695,12 @@ async function handleScan(qrcode) {
     setTimeout(() => input.style.backgroundColor = '#f0f7ff', 300);
   } catch (err) {
     console.error('Erro ao salvar bipagem no banco:', err);
-    showScanMsg('Erro de Conexão. Bipe novamente!', 'error');
+    if (err.message && err.message.includes('Tempo de conex')) {
+      showScanMsg('Conexão travada. Forçando recarregamento do app...', 'error');
+      setTimeout(() => window.location.reload(true), 2000);
+    } else {
+      showScanMsg('Erro de Conexão. Bipe novamente!', 'error');
+    }
   }
 }
 

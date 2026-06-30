@@ -871,7 +871,12 @@ async function renderAmarracao(container) {
       
     } catch (err) {
       console.error(err);
-      formError.textContent = 'Erro ao salvar: ' + err.message;
+      if (err.message.includes('Tempo de conex')) {
+        formError.textContent = 'Conexão travada pelo navegador. Forçando recarregamento da tela...';
+        setTimeout(() => window.location.reload(true), 2000);
+      } else {
+        formError.textContent = 'Erro ao salvar: ' + err.message;
+      }
     } finally {
       btnSave.disabled = true; // Disabled because PIN is cleared
       btnSave.innerHTML = `
