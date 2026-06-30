@@ -225,13 +225,17 @@ async function init() {
     syncAppData(); // Warm up cache on load
   }
 
-  supabase.auth.onAuthStateChange(async (event, session) => {
+  supabase.auth.onAuthStateChange((event, session) => {
     const wasSignedIn = !!currentSession;
     currentSession = session;
     
     if (event === 'SIGNED_IN' && session) {
-      await loadUserProfile(session.user.id);
-      syncAppData(); // Warm up cache on login
+      // setTimeout(0): sai do lock interno do supabase-js antes de fazer chamadas
+      // Sem isso, loadUserProfile e syncAppData travam o lock causando deadlock em todo o app
+      setTimeout(async () => {
+        await loadUserProfile(session.user.id);
+        syncAppData();
+      }, 0);
     }
     
     if (event === 'SIGNED_OUT' || (event === 'SIGNED_IN' && !wasSignedIn)) {
@@ -925,22 +929,4 @@ async function renderAmarracao(container) {
 }
 
 init();
-window.syncAppData = syncAppData;
-
-// Fix for frozen sockets after device sleep
-let lastHiddenTime = 0;
-document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'hidden') {
-    lastHiddenTime = Date.now();
-  } else if (document.visibilityState === 'visible') {
-    if (lastHiddenTime > 0) {
-      const timeAsleep = Date.now() - lastHiddenTime;
-      // Se o tablet dormiu por mais de 5 minutos, recarrega a pág para matar sockets travados
-      if (timeAsleep > 5 * 60 * 1000) {
-        window.location.reload(true);
-      }
-    }
-  }
-});
-
 window.syncAppData = syncAppData;
