@@ -757,16 +757,18 @@ async function renderAmarracao(container) {
       const opId = document.getElementById('op_select').value || null;
 
       // VALIDATION: Check if OP limit is reached
+      // NOTA: Usamos select('id') simples (sem count:exact) para evitar requisição HTTP HEAD
+      // que trava no Chrome após o primeiro pacote. Contamos via .length do array retornado.
       if (opId) {
         const selectedOp = ops.find(o => o.id === opId);
         if (selectedOp && selectedOp.qtd_caixas > 0) {
-          const { count, error: countError } = await withTimeout(supabase
+          const { data: countData, error: countError } = await withTimeout(supabase
             .from('amarracoes')
-            .select('id', { count: 'exact' })
-            .limit(1)
+            .select('id')
             .eq('op_id', opId), 10000);
             
-          if (!countError && count >= selectedOp.qtd_caixas) {
+          const currentCount = countData ? countData.length : 0;
+          if (!countError && currentCount >= selectedOp.qtd_caixas) {
             const proceed = window.confirm(`AVISO: A OP selecionada previa apenas ${selectedOp.qtd_caixas} pacotes e este limite já foi atingido.\n\nDeseja apontar e adicionar este pacote à OP mesmo assim?`);
             if (!proceed) {
               btnSave.disabled = false;
