@@ -211,17 +211,6 @@ async function init() {
 
     window.addEventListener('hashchange', route);
   route();
-
-  // Heartbeat para manter a conexão HTTP/2 viva e impedir que o firewall/NAT da rede derrube o socket por inatividade
-  setInterval(async () => {
-    if (currentSession) {
-      try {
-        await supabase.from('amarracoes').select('id').limit(1);
-      } catch (e) {
-        // ignora falhas do heartbeat silenciosamente
-      }
-    }
-  }, 10000);
 }
 
 async function route() {
