@@ -1057,6 +1057,7 @@ async function handleFinalizar() {
       const mdfePayload = {
         tipoAmbiente: 1, // Prod
         tipoEmitente: 2, // Transportador
+        tpMDFe: 1, // 1 - Normal, 3 - Complementar
         ufCarregamento: ufOrigem,
         ufDescarregamento: ufDestino,
         modalidade: 1,
