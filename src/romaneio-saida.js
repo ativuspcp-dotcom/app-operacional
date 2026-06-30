@@ -634,64 +634,69 @@ async function handleScan(qrcode) {
     }
   }
 
-  // NEW LOGIC: Create Romaneio if doesn't exist
-  if (!currentRomaneio) {
-    const { data: roData, error: roError } = await supabase
-      .from('expedicao_romaneios')
+  try {
+    // NEW LOGIC: Create Romaneio if doesn't exist
+    if (!currentRomaneio) {
+      const { data: roData, error: roError } = await withTimeout(supabase
+        .from('expedicao_romaneios')
+        .insert([{
+          bplid: selectedOC.bplid,
+          ordem_carregamento_id: selectedOC.id,
+          status: 'Em Andamento'
+        }])
+        .select()
+        .single(), 10000);
+      if (roError) throw roError;
+      currentRomaneio = roData;
+    }
+
+    // Insert item
+    const { data: itemData, error: itemError } = await withTimeout(supabase
+      .from('expedicao_romaneio_itens')
       .insert([{
-        bplid: selectedOC.bplid,
-        ordem_carregamento_id: selectedOC.id,
-        status: 'Em Andamento'
+        romaneio_id: currentRomaneio.id,
+        qrcode: data.qrcode,
+        ordem_item_id: selectedLine.id,
+        quantidade: data.total_calc,
+        peso: data.peso,
+        pecas: data.pecas
       }])
       .select()
-      .single();
-    if (roError) throw roError;
-    currentRomaneio = roData;
-  }
+      .single(), 10000);
+    if (itemError) throw itemError;
 
-  // Insert item
-  const { data: itemData, error: itemError } = await supabase
-    .from('expedicao_romaneio_itens')
-    .insert([{
-      romaneio_id: currentRomaneio.id,
+    // Update amarracoes
+    if (selectedOC.tipo !== 'transferencia_interna') {
+      await withTimeout(supabase
+        .from('amarracoes')
+        .update({ saida: true })
+        .eq('qrcode', data.qrcode), 10000);
+    }
+
+    const pkgToSave = {
+      id: itemData.id,
       qrcode: data.qrcode,
       ordem_item_id: selectedLine.id,
-      quantidade: data.total_calc,
+      total_calc: data.total_calc,
       peso: data.peso,
       pecas: data.pecas
-    }])
-    .select()
-    .single();
-  if (itemError) throw itemError;
-
-  // Update amarracoes
-  if (selectedOC.tipo !== 'transferencia_interna') {
-    await supabase
-      .from('amarracoes')
-      .update({ saida: true })
-      .eq('qrcode', data.qrcode);
+    };
+    
+    scannedPackages.push(pkgToSave);
+    
+    showScanMsg('Pacote adicionado e salvo com sucesso!', 'success');
+    
+    // Update UI dynamically instead of destroying the whole page/camera
+    updateScannerUI();
+    
+    // Flash green
+    const input = document.getElementById('rs-qrcode-input');
+    input.style.backgroundColor = '#e8f5e9';
+    setTimeout(() => input.style.backgroundColor = '#f0f7ff', 300);
+  } catch (err) {
+    console.error('Erro ao salvar bipagem no banco:', err);
+    showScanMsg('Erro de Conexão. Bipe novamente!', 'error');
   }
-
-  const pkgToSave = {
-    id: itemData.id,
-    qrcode: data.qrcode,
-    ordem_item_id: selectedLine.id,
-    total_calc: data.total_calc,
-    peso: data.peso,
-    pecas: data.pecas
-  };
-  
-  scannedPackages.push(pkgToSave);
-  
-  showScanMsg('Pacote adicionado e salvo com sucesso!', 'success');
-  
-  // Update UI dynamically instead of destroying the whole page/camera
-  updateScannerUI();
-  
-  // Flash green
-  const input = document.getElementById('rs-qrcode-input');
-  input.style.backgroundColor = '#e8f5e9';
-  setTimeout(() => input.style.backgroundColor = '#f0f7ff', 300);
 }
 
 function updateScannerUI() {
