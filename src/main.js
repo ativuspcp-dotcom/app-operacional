@@ -1,5 +1,5 @@
 import './style.css';
-import { supabase } from './supabase.js';
+import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from './supabase.js';
 import { renderRomaneioSaida } from './romaneio-saida.js';
 
 // Força o recarregamento automático da página quando houver uma nova versão do app (PWA)
@@ -132,6 +132,31 @@ export function setBPLID(id) {
   currentBPLID = parseInt(id);
   localStorage.setItem('app_bplid', currentBPLID);
   window.location.reload();
+}
+
+/**
+ * rawInsert: faz um INSERT direto via fetch nativo, bypassing o supabase-js
+ * para evitar o trava do Web Lock interno de renovação de token.
+ * Retorna { data, error } no mesmo formato do supabase-js.
+ */
+async function rawInsert(table, payload) {
+  const { data: { session } } = await supabase.auth.getSession();
+  const token = session?.access_token || '';
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'apikey': SUPABASE_ANON_KEY,
+      'Authorization': `Bearer ${token}`,
+      'Prefer': 'return=representation'
+    },
+    body: JSON.stringify(payload)
+  });
+  const json = await res.json();
+  if (!res.ok) return { data: null, error: json };
+  // REST returns an array; we want the first item (.single() equivalent)
+  const record = Array.isArray(json) ? json[0] : json;
+  return { data: record, error: null };
 }
 
 async function loadUserProfile(userId) {
@@ -799,16 +824,16 @@ async function renderAmarracao(container) {
         tablet_user_id: currentSession.user.id,
         op_id: opId
       };
-      console.log('[AMARRACAO LOG-3] Payload montado. Chamando supabase.insert...');
+      console.log('[AMARRACAO LOG-3] Payload montado. Chamando rawInsert (fetch nativo, sem lock supabase-js)...');
 
-      const { data: insertData, error: insertError } = await withTimeout(supabase
-        .from('amarracoes')
-        .insert(payload)
-        .select()
-        .single(), 15000);
-      console.log('[AMARRACAO LOG-4] supabase.insert retornou. insertError:', insertError);
+      const { data: insertData, error: insertError } = await withTimeout(
+        rawInsert('amarracoes', payload),
+        15000
+      );
+      console.log('[AMARRACAO LOG-4] rawInsert retornou. insertError:', insertError);
       
-      if (insertError) throw insertError;
+      if (insertError) throw new Error(insertError.message || JSON.stringify(insertError));
+      if (!insertData) throw new Error('Insert não retornou dados.');
 
       const imprimir = document.getElementById('imprimir_checkbox').checked;
 
