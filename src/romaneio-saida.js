@@ -1,5 +1,29 @@
-import { supabase } from './supabase.js';
+import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from './supabase.js';
 import { currentBPLID, renderBranchSelector, bindBranchSelector, withTimeout } from './main.js';
+
+/**
+ * rawInsert: fetch nativo direto para a API REST do Supabase,
+ * bypassing o Web Lock interno do supabase-js que trava o segundo insert.
+ */
+async function rawInsert(table, payload) {
+  const { data: { session } } = await supabase.auth.getSession();
+  const token = session?.access_token || '';
+  const body = Array.isArray(payload) ? payload : [payload];
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'apikey': SUPABASE_ANON_KEY,
+      'Authorization': `Bearer ${token}`,
+      'Prefer': 'return=representation'
+    },
+    body: JSON.stringify(body)
+  });
+  const json = await res.json();
+  if (!res.ok) return { data: null, error: json };
+  const record = Array.isArray(json) ? json[0] : json;
+  return { data: record, error: null };
+}
 
 let cachedOCs = [];
 let cachedOCLines = [];
@@ -637,33 +661,27 @@ async function handleScan(qrcode) {
   try {
     // NEW LOGIC: Create Romaneio if doesn't exist
     if (!currentRomaneio) {
-      const { data: roData, error: roError } = await withTimeout(supabase
-        .from('expedicao_romaneios')
-        .insert([{
-          bplid: selectedOC.bplid,
-          ordem_carregamento_id: selectedOC.id,
-          status: 'Em Andamento'
-        }])
-        .select()
-        .single(), 10000);
-      if (roError) throw roError;
+      const { data: roData, error: roError } = await withTimeout(rawInsert('expedicao_romaneios', {
+        bplid: selectedOC.bplid,
+        ordem_carregamento_id: selectedOC.id,
+        status: 'Em Andamento'
+      }), 10000);
+      if (roError) throw new Error(roError.message || JSON.stringify(roError));
+      if (!roData) throw new Error('Romaneio não retornou dados.');
       currentRomaneio = roData;
     }
 
     // Insert item
-    const { data: itemData, error: itemError } = await withTimeout(supabase
-      .from('expedicao_romaneio_itens')
-      .insert([{
-        romaneio_id: currentRomaneio.id,
-        qrcode: data.qrcode,
-        ordem_item_id: selectedLine.id,
-        quantidade: data.total_calc,
-        peso: data.peso,
-        pecas: data.pecas
-      }])
-      .select()
-      .single(), 10000);
-    if (itemError) throw itemError;
+    const { data: itemData, error: itemError } = await withTimeout(rawInsert('expedicao_romaneio_itens', {
+      romaneio_id: currentRomaneio.id,
+      qrcode: data.qrcode,
+      ordem_item_id: selectedLine.id,
+      quantidade: data.total_calc,
+      peso: data.peso,
+      pecas: data.pecas
+    }), 10000);
+    if (itemError) throw new Error(itemError.message || JSON.stringify(itemError));
+    if (!itemData) throw new Error('Item do romaneio não retornou dados.');
 
     // Update amarracoes
     if (selectedOC.tipo !== 'transferencia_interna') {
