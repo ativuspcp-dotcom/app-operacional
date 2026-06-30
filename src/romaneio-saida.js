@@ -574,11 +574,11 @@ async function handleScan(qrcode) {
   }
 
   // 2. Fetch from DB
-  const { data, error } = await supabase
+  const { data, error } = await withTimeout(supabase
     .from('amarracoes')
     .select('*')
     .eq('qrcode', qrcode)
-    .single();
+    .single(), 10000);
 
   if (error || !data) {
     showScanMsg('QR Code não encontrado no estoque!', 'error');

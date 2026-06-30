@@ -763,7 +763,7 @@ async function renderAmarracao(container) {
           const { count, error: countError } = await withTimeout(supabase
             .from('amarracoes')
             .select('id', { count: 'exact', head: true })
-            .eq('op_id', opId), 20000);
+            .eq('op_id', opId), 10000);
             
           if (!countError && count >= selectedOp.qtd_caixas) {
             const proceed = window.confirm(`AVISO: A OP selecionada previa apenas ${selectedOp.qtd_caixas} pacotes e este limite já foi atingido.\n\nDeseja apontar e adicionar este pacote à OP mesmo assim?`);
@@ -799,7 +799,7 @@ async function renderAmarracao(container) {
         .from('amarracoes')
         .insert(payload)
         .select()
-        .single(), 60000);
+        .single(), 15000);
       
       if (insertError) throw insertError;
 
@@ -883,5 +883,21 @@ async function renderAmarracao(container) {
 
 init();
 window.syncAppData = syncAppData;
+
+// Fix for frozen sockets after device sleep
+let lastHiddenTime = 0;
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') {
+    lastHiddenTime = Date.now();
+  } else if (document.visibilityState === 'visible') {
+    if (lastHiddenTime > 0) {
+      const timeAsleep = Date.now() - lastHiddenTime;
+      // Se o tablet dormiu por mais de 5 minutos, recarrega a pág para matar sockets travados
+      if (timeAsleep > 5 * 60 * 1000) {
+        window.location.reload(true);
+      }
+    }
+  }
+});
 
 window.syncAppData = syncAppData;
