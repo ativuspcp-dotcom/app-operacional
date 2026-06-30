@@ -135,13 +135,19 @@ export function setBPLID(id) {
 }
 
 /**
- * rawInsert: faz um INSERT direto via fetch nativo, bypassing o supabase-js
- * para evitar o trava do Web Lock interno de renovação de token.
- * Retorna { data, error } no mesmo formato do supabase-js.
+ * rawInsert: fetch nativo direto para a API REST do Supabase,
+ * bypassing o Web Lock interno do supabase-js que trava o segundo insert.
+ * Lê o token diretamente do localStorage para evitar qualquer chamada ao supabase-js.
  */
 async function rawInsert(table, payload) {
-  const { data: { session } } = await supabase.auth.getSession();
-  const token = session?.access_token || '';
+  // Lê o token direto do localStorage — sem passar pelo supabase-js e seu Web Lock
+  const storageKey = `sb-mqtyjzdwwgeycvmbiqsg-auth-token`;
+  let token = '';
+  try {
+    const raw = localStorage.getItem(storageKey);
+    if (raw) token = JSON.parse(raw)?.access_token || '';
+  } catch (_) {}
+
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
     method: 'POST',
     headers: {
@@ -154,7 +160,6 @@ async function rawInsert(table, payload) {
   });
   const json = await res.json();
   if (!res.ok) return { data: null, error: json };
-  // REST returns an array; we want the first item (.single() equivalent)
   const record = Array.isArray(json) ? json[0] : json;
   return { data: record, error: null };
 }

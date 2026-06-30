@@ -4,10 +4,17 @@ import { currentBPLID, renderBranchSelector, bindBranchSelector, withTimeout } f
 /**
  * rawInsert: fetch nativo direto para a API REST do Supabase,
  * bypassing o Web Lock interno do supabase-js que trava o segundo insert.
+ * Lê o token diretamente do localStorage para evitar qualquer chamada ao supabase-js.
  */
 async function rawInsert(table, payload) {
-  const { data: { session } } = await supabase.auth.getSession();
-  const token = session?.access_token || '';
+  // Lê o token direto do localStorage — sem passar pelo supabase-js e seu Web Lock
+  const storageKey = `sb-mqtyjzdwwgeycvmbiqsg-auth-token`;
+  let token = '';
+  try {
+    const raw = localStorage.getItem(storageKey);
+    if (raw) token = JSON.parse(raw)?.access_token || '';
+  } catch (_) {}
+
   const body = Array.isArray(payload) ? payload : [payload];
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
     method: 'POST',
