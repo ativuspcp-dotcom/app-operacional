@@ -209,8 +209,19 @@ async function init() {
     }
   });
 
-  window.addEventListener('hashchange', route);
+    window.addEventListener('hashchange', route);
   route();
+
+  // Heartbeat para manter a conexão HTTP/2 viva e impedir que o firewall/NAT da rede derrube o socket por inatividade
+  setInterval(async () => {
+    if (currentSession) {
+      try {
+        await supabase.from('amarracoes').select('id').limit(1);
+      } catch (e) {
+        // ignora falhas do heartbeat silenciosamente
+      }
+    }
+  }, 10000);
 }
 
 async function route() {
@@ -762,7 +773,8 @@ async function renderAmarracao(container) {
         if (selectedOp && selectedOp.qtd_caixas > 0) {
           const { count, error: countError } = await withTimeout(supabase
             .from('amarracoes')
-            .select('id', { count: 'exact', head: true })
+            .select('id', { count: 'exact' })
+            .limit(1)
             .eq('op_id', opId), 10000);
             
           if (!countError && count >= selectedOp.qtd_caixas) {
