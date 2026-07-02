@@ -229,9 +229,9 @@ async function init() {
     const wasSignedIn = !!currentSession;
     currentSession = session;
     
-    if (event === 'SIGNED_IN' && session) {
+    if (event === 'SIGNED_IN' && session && !wasSignedIn) {
       // setTimeout(0): sai do lock interno do supabase-js antes de fazer chamadas
-      // Sem isso, loadUserProfile e syncAppData travam o lock causando deadlock em todo o app
+      // Apenas no login real (wasSignedIn=false), nunca em renovações de token
       setTimeout(async () => {
         await loadUserProfile(session.user.id);
         syncAppData();
