@@ -110,7 +110,26 @@ export async function renderRomaneioSaida(container) {
   
   currentRomaneio = null;
   scannedPackages = [];
-  
+
+  // Restaura romaneio Em Andamento do cache caso o operador tenha saído e voltado à tela
+  // Sem isso, um novo romaneio seria criado no 1º bipe, gerando duplicatas no banco
+  if (selectedOC) {
+    const existingRomaneio = cachedRomaneios.find(r =>
+      r.ordem_carregamento_id === selectedOC.id && r.status === 'Em Andamento'
+    );
+    if (existingRomaneio) {
+      currentRomaneio = existingRomaneio;
+      scannedPackages = (existingRomaneio.expedicao_romaneio_itens || []).map(item => ({
+        id: item.id,
+        qrcode: item.qrcode,
+        ordem_item_id: item.ordem_item_id,
+        total_calc: item.quantidade,
+        peso: item.peso,
+        pecas: item.pecas
+      }));
+    }
+  }
+
   await renderCurrentView();
 }
 
