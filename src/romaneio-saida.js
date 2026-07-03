@@ -750,6 +750,21 @@ async function handleScan(qrcode) {
     };
     
     scannedPackages.push(pkgToSave);
+
+    // Atualiza o cachedRomaneios em memória para que o renderItemList mostre valores corretos
+    // sem precisar de um sync completo ao navegar de volta
+    const cachedEntry = cachedRomaneios.find(r => r.id === currentRomaneio.id);
+    if (cachedEntry) {
+      if (!cachedEntry.expedicao_romaneio_itens) cachedEntry.expedicao_romaneio_itens = [];
+      cachedEntry.expedicao_romaneio_itens.push({
+        id: itemData.id,
+        qrcode: data.qrcode,
+        ordem_item_id: selectedLine.id,
+        quantidade: data.total_calc,
+        peso: data.peso,
+        pecas: data.pecas
+      });
+    }
     
     showScanMsg('Pacote adicionado e salvo com sucesso!', 'success');
     
