@@ -685,17 +685,40 @@ async function handleScan(qrcode) {
   }
 
   try {
-    // NEW LOGIC: Create Romaneio if doesn't exist
+    // Garante que não há romaneio Em Andamento para esta OC — consulta fresca ao banco (não ao cache)
+    // O cache pode estar desatualizado se o romaneio foi criado segundos atrás
     if (!currentRomaneio) {
-      const { data: roData, error: roError } = await withTimeout(rawInsert('expedicao_romaneios', {
-        bplid: selectedOC.bplid,
-        ordem_carregamento_id: selectedOC.id,
-        status: 'Em Andamento'
-      }), 10000);
-      if (roError) throw new Error(roError.message || JSON.stringify(roError));
-      if (!roData) throw new Error('Romaneio não retornou dados.');
-      currentRomaneio = roData;
+      const storageKey = `sb-mqtyjzdwwgeycvmbiqsg-auth-token`;
+      let token = '';
+      try { const raw = localStorage.getItem(storageKey); if (raw) token = JSON.parse(raw)?.access_token || ''; } catch (_) {}
+
+      const checkRes = await withTimeout(fetch(
+        `${SUPABASE_URL}/rest/v1/expedicao_romaneios?ordem_carregamento_id=eq.${selectedOC.id}&status=eq.Em%20Andamento&select=*`,
+        { headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${token}` } }
+      ), 10000);
+      const existing = await checkRes.json();
+
+      if (Array.isArray(existing) && existing.length > 0) {
+        // Já existe — usa o que está no banco e corrige o cache
+        currentRomaneio = existing[0];
+        if (!cachedRomaneios.find(r => r.id === currentRomaneio.id)) {
+          cachedRomaneios.push({ ...currentRomaneio, expedicao_romaneio_itens: [] });
+        }
+      } else {
+        // Não existe — cria um novo
+        const { data: roData, error: roError } = await withTimeout(rawInsert('expedicao_romaneios', {
+          bplid: selectedOC.bplid,
+          ordem_carregamento_id: selectedOC.id,
+          status: 'Em Andamento'
+        }), 10000);
+        if (roError) throw new Error(roError.message || JSON.stringify(roError));
+        if (!roData) throw new Error('Romaneio não retornou dados.');
+        currentRomaneio = roData;
+        // Atualiza o cache em memória imediatamente para que navegações rápidas encontrem este romaneio
+        cachedRomaneios.push({ ...currentRomaneio, expedicao_romaneio_itens: [] });
+      }
     }
+
 
     // Insert item
     const { data: itemData, error: itemError } = await withTimeout(rawInsert('expedicao_romaneio_itens', {
