@@ -68,6 +68,7 @@ let selectedOC = null;
 let selectedLine = null;
 let currentRomaneio = null; // Stores the 'Em Andamento' romaneio ID
 let scannedPackages = []; // array of amarracoes rows
+let isFinalizing = false; // trava contra duplo-clique/duplo-toque em Finalizar Romaneio
 let containerRef = null;
 let currentScanner = null;
 
@@ -861,19 +862,33 @@ function playErrorSound() {
 }
 
 async function handleFinalizar() {
+  // Bloqueia reentrância: um duplo-toque no botão não pode disparar duas execuções
+  // concorrentes, senão ambas passam pela checagem de "já faturado" antes que a
+  // primeira termine de gravar, e duplicam a Nota no SAP
+  if (isFinalizing) return;
+
   if (scannedPackages.length === 0) {
     alert('Nenhum pacote foi bipado.');
     return;
   }
 
-  if (selectedOC.tipo === 'transferencia_interna') {
-    return await handleFinalizarTransferencia();
-  }
-  
-  if (selectedOC.tipo === 'mercado_interno') {
-    return await handleFinalizarMercadoInterno();
-  }
+  isFinalizing = true;
+  try {
+    if (selectedOC.tipo === 'transferencia_interna') {
+      return await handleFinalizarTransferencia();
+    }
 
+    if (selectedOC.tipo === 'mercado_interno') {
+      return await handleFinalizarMercadoInterno();
+    }
+
+    await handleFinalizarRemessa();
+  } finally {
+    isFinalizing = false;
+  }
+}
+
+async function handleFinalizarRemessa() {
   document.getElementById('rs-content').innerHTML = `
     <div style="text-align:center; padding: 40px;">
       <div class="spinner" style="margin-bottom: 16px;"></div>
@@ -883,6 +898,31 @@ async function handleFinalizar() {
   `;
 
   try {
+    // 0. Trava atômica: só segue se conseguir virar o romaneio de 'Em Andamento' para
+    // 'Faturando' nesta chamada. O filtro .eq('status', 'Em Andamento') faz o Postgres
+    // aceitar a virada em uma única tentativa mesmo com duplo-toque ou duas abas —
+    // quem perder a corrida cai no bloco abaixo sem nunca chamar o SAP.
+    const { data: lockRows, error: lockError } = await supabase
+      .from('expedicao_romaneios')
+      .update({ status: 'Faturando' })
+      .eq('id', currentRomaneio.id)
+      .eq('status', 'Em Andamento')
+      .select('id');
+
+    if (lockError) throw lockError;
+    if (!lockRows || lockRows.length === 0) {
+      alert('Este romaneio já teve um envio de faturamento iniciado anteriormente e está bloqueado para novas tentativas automáticas (evita duplicar Notas no SAP). Verifique com o setor de faturamento os pedidos desta OC no SAP antes de prosseguir.');
+      selectedOC = null;
+      selectedLine = null;
+      currentRomaneio = null;
+      scannedPackages = [];
+      currentView = 'oc_list';
+      await renderCurrentView();
+      return;
+    }
+    const lockedCacheEntry = cachedRomaneios.find(r => r.id === currentRomaneio.id);
+    if (lockedCacheEntry) lockedCacheEntry.status = 'Faturando';
+
     // 1. Puxar linhas da OC para montar o payload com os dados novos (card_code, unit_price, etc)
     const { data: ocLines, error: linesError } = await supabase
       .from('expedicao_ordens_carregamento_itens')
@@ -933,10 +973,23 @@ async function handleFinalizar() {
       docLine.Quantity += pkgVol;
     }
 
-    // 3. Fazer o disparo do POST para cada agrupamento (cada Nota)
+    // 3. Verifica se algum pedido desta OC já foi faturado numa tentativa anterior
+    // (evita reenviar ao SAP e gerar Nota duplicada caso um retry aconteça após falha parcial)
+    const { data: existingNotas } = await supabase
+      .from('expedicao_notas_fiscais')
+      .select('pedido_numero, sap_doc_num, sap_doc_entry')
+      .eq('oc_id', selectedOC.id);
+
+    // 4. Fazer o disparo do POST para cada agrupamento (cada Nota)
     for (const key in groups) {
       const group = groups[key];
-      
+
+      const jaFaturado = existingNotas?.find(n => n.pedido_numero === group.U_Pedido);
+      if (jaFaturado) {
+        groups[key].sapDocNumSaved = jaFaturado.sap_doc_num;
+        continue;
+      }
+
       const payload = {
         CardCode: group.CardCode,
         Comments: 'Emitido via Portal Tableros',
@@ -976,31 +1029,41 @@ async function handleFinalizar() {
         
         const sapDocNum = data?.data?.DocNum;
         if (sapDocNum) {
-          // Salva NFe pendente
-          await supabase.from('expedicao_notas_fiscais').insert({
-            oc_id: selectedOC.id,
-            pedido_numero: group.U_Pedido,
-            sap_doc_num: String(sapDocNum),
-            sap_doc_entry: data?.data?.DocEntry ? String(data.data.DocEntry) : null
-          });
           groups[key].sapDocNumSaved = sapDocNum;
-          
-          // Atualizar amarracoes (pacotes) deste grupo garantindo saida=true e vinculando o DocEntry gerado
-          const groupQRs = scannedPackages
-            .filter(pkg => {
-              const line = ocLines.find(l => l.id === pkg.ordem_item_id);
-              if (!line) return false;
-              const ped = line.pedido_numero || 'SEM_PEDIDO';
-              const card = line.cod_pn || '';
-              return (ped + '_' + card) === key;
-            })
-            .map(p => p.qrcode);
-            
-          if (groupQRs.length > 0) {
-             const sapDocEntry = data?.data?.DocEntry;
-             await supabase.from('amarracoes')
-               .update({ saida: true })
-               .in('qrcode', groupQRs);
+
+          // A partir daqui o SAP já criou a Nota — falhas nestas rotinas de apoio não podem
+          // disparar um retry do envio para este grupo, senão duplicaríamos a Nota no SAP
+          try {
+            // Salva NFe pendente
+            await supabase.from('expedicao_notas_fiscais').insert({
+              oc_id: selectedOC.id,
+              pedido_numero: group.U_Pedido,
+              sap_doc_num: String(sapDocNum),
+              sap_doc_entry: data?.data?.DocEntry ? String(data.data.DocEntry) : null
+            });
+          } catch (bookkeepingError) {
+            console.error(`Nota ${sapDocNum} criada no SAP mas falhou ao registrar em expedicao_notas_fiscais:`, bookkeepingError);
+          }
+
+          try {
+            // Atualizar amarracoes (pacotes) deste grupo garantindo saida=true
+            const groupQRs = scannedPackages
+              .filter(pkg => {
+                const line = ocLines.find(l => l.id === pkg.ordem_item_id);
+                if (!line) return false;
+                const ped = line.pedido_numero || 'SEM_PEDIDO';
+                const card = line.cod_pn || '';
+                return (ped + '_' + card) === key;
+              })
+              .map(p => p.qrcode);
+
+            if (groupQRs.length > 0) {
+              await supabase.from('amarracoes')
+                .update({ saida: true })
+                .in('qrcode', groupQRs);
+            }
+          } catch (amarracaoError) {
+            console.error(`Nota ${sapDocNum} criada no SAP mas falhou ao atualizar amarracoes:`, amarracaoError);
           }
         }
       } catch (postError) {
@@ -1214,8 +1277,12 @@ async function handleFinalizar() {
       });
     } catch (err) {
     console.error(err);
-    alert('Erro no fechamento: ' + err.message);
-    currentView = 'item_list'; 
+    alert('Erro no envio ao SAP: ' + err.message + '\n\nPor segurança, este romaneio foi bloqueado para novas tentativas automáticas (evita duplicar Notas no SAP). Contate o suporte/TI para verificar no SAP quais pedidos desta OC já foram faturados antes de liberar um novo envio.');
+    selectedOC = null;
+    selectedLine = null;
+    currentRomaneio = null;
+    scannedPackages = [];
+    currentView = 'oc_list';
     renderCurrentView();
   }
 }
@@ -1295,12 +1362,37 @@ async function handleFinalizarMercadoInterno() {
   `;
 
   try {
+    // 0. Trava atômica: só segue se conseguir virar o romaneio de 'Em Andamento' para
+    // 'Faturando' nesta chamada. O filtro .eq('status', 'Em Andamento') faz o Postgres
+    // aceitar a virada em uma única tentativa mesmo com duplo-toque ou duas abas —
+    // quem perder a corrida cai no bloco abaixo sem nunca chamar o SAP.
+    const { data: lockRows, error: lockError } = await supabase
+      .from('expedicao_romaneios')
+      .update({ status: 'Faturando' })
+      .eq('id', currentRomaneio.id)
+      .eq('status', 'Em Andamento')
+      .select('id');
+
+    if (lockError) throw lockError;
+    if (!lockRows || lockRows.length === 0) {
+      alert('Este romaneio já teve um envio de faturamento iniciado anteriormente e está bloqueado para novas tentativas automáticas (evita duplicar Notas no SAP). Verifique com o setor de faturamento os pedidos desta OC no SAP antes de prosseguir.');
+      selectedOC = null;
+      selectedLine = null;
+      currentRomaneio = null;
+      scannedPackages = [];
+      currentView = 'oc_list';
+      await renderCurrentView();
+      return;
+    }
+    const lockedCacheEntry = cachedRomaneios.find(r => r.id === currentRomaneio.id);
+    if (lockedCacheEntry) lockedCacheEntry.status = 'Faturando';
+
     // 1. Obter linhas originais da OC para pegar o LineNum (da recém-criada coluna line_num)
     const { data: ocLines, error: linesError } = await supabase
       .from('expedicao_ordens_carregamento_itens')
       .select('*')
       .eq('ordem_id', selectedOC.id);
-    
+
     if (linesError) throw linesError;
 
     // 2. Agrupar pacotes por Pedido e Parceiro de Negócios
@@ -1345,11 +1437,26 @@ async function handleFinalizarMercadoInterno() {
        groups[key].items[lineKey].Quantity += chapas;
     }
 
-    // 3. Montar DocumentLines e disparar para o SAP
+    // 3. Verifica se algum pedido desta OC já foi faturado numa tentativa anterior
+    // (evita reenviar ao SAP e gerar Nota duplicada caso um retry aconteça após falha parcial)
+    const { data: existingNotas } = await supabase
+      .from('expedicao_notas_fiscais')
+      .select('pedido_numero, sap_doc_num, sap_doc_entry')
+      .eq('oc_id', selectedOC.id);
+
+    // 4. Montar DocumentLines e disparar para o SAP
+    const sapResponses = [];
     for (const key in groups) {
       const group = groups[key];
+
+      const jaFaturado = existingNotas?.find(n => n.pedido_numero === group.U_Pedido);
+      if (jaFaturado) {
+        sapResponses.push({ pedido: group.U_Pedido, docNum: jaFaturado.sap_doc_num, skipped: true });
+        continue;
+      }
+
       const docLines = Object.values(group.items);
-      
+
       const payload = {
         CardCode: group.CardCode,
         Comments: 'Emitido via App Operacional',
@@ -1369,7 +1476,7 @@ async function handleFinalizarMercadoInterno() {
       const { data, error } = await supabase.functions.invoke('faturar-sap', {
         body: payload
       });
-      
+
       if (error) {
         throw new Error(error.message || (data && data.error) || 'Erro desconhecido ao faturar no SAP');
       }
@@ -1380,6 +1487,24 @@ async function handleFinalizarMercadoInterno() {
         const sapErr = data.data.error;
         const msg = sapErr.message ? sapErr.message.value : JSON.stringify(sapErr);
         throw new Error('Erro SAP: ' + msg);
+      }
+
+      const sapDocNum = data?.data?.DocNum;
+      sapResponses.push({ pedido: group.U_Pedido, docNum: sapDocNum });
+
+      if (sapDocNum) {
+        // A partir daqui o SAP já criou a Nota — falha aqui não pode disparar um retry do envio
+        // para este grupo, senão duplicaríamos a Nota no SAP
+        try {
+          await supabase.from('expedicao_notas_fiscais').insert({
+            oc_id: selectedOC.id,
+            pedido_numero: group.U_Pedido,
+            sap_doc_num: String(sapDocNum),
+            sap_doc_entry: data?.data?.DocEntry ? String(data.data.DocEntry) : null
+          });
+        } catch (bookkeepingError) {
+          console.error(`Nota ${sapDocNum} criada no SAP mas falhou ao registrar em expedicao_notas_fiscais:`, bookkeepingError);
+        }
       }
     }
 
@@ -1426,9 +1551,12 @@ async function handleFinalizarMercadoInterno() {
       });
     } catch (err) {
     console.error('Error in handleFinalizarMercadoInterno:', err);
-    alert('Erro ao finalizar ordem: ' + err.message);
-    
-    currentView = 'item_list';
+    alert('Erro no envio ao SAP: ' + err.message + '\n\nPor segurança, este romaneio foi bloqueado para novas tentativas automáticas (evita duplicar Notas no SAP). Contate o suporte/TI para verificar no SAP quais pedidos desta OC já foram faturados antes de liberar um novo envio.');
+    selectedOC = null;
+    selectedLine = null;
+    currentRomaneio = null;
+    scannedPackages = [];
+    currentView = 'oc_list';
     renderCurrentView();
   }
 }
