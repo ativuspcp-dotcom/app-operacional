@@ -861,6 +861,17 @@ function playErrorSound() {
   } catch(e){}
 }
 
+// Erro tagueado: sapDefinitiveRejection=true significa que o SAP respondeu explicitamente
+// recusando o pedido (nenhuma Nota foi criada) — nesses casos é seguro liberar o romaneio
+// automaticamente. Quando false/ausente, a falha é ambígua (rede/timeout) e o romaneio
+// deve permanecer travado até conferência manual no SAP.
+function buildSapError(message, pedido, isDefinitiveRejection) {
+  const err = new Error(message);
+  err.sapDefinitiveRejection = !!isDefinitiveRejection;
+  err.pedido = pedido;
+  return err;
+}
+
 async function handleFinalizar() {
   // Bloqueia reentrância: um duplo-toque no botão não pode disparar duas execuções
   // concorrentes, senão ambas passam pela checagem de "já faturado" antes que a
@@ -1013,20 +1024,22 @@ async function handleFinalizarRemessa() {
         });
         
         if (error) {
-          // Quando a edge function cai no block `status: 400` do catch interno dela
-          // O supabase.js preenche a variavel `error` ou `data.error`
-          throw new Error(error.message || (data && data.error) || 'Erro desconhecido da Edge Function');
+          // Erro de invocação da edge function (não respondeu como esperado) — ambíguo,
+          // não dá pra saber se o SAP chegou a receber o pedido
+          throw buildSapError(error.message || (data && data.error) || 'Erro desconhecido da Edge Function', group.U_Pedido, false);
         }
-        
+
         if (data && data.error) {
-          throw new Error(typeof data.error === 'object' ? JSON.stringify(data.error) : data.error);
+          // sapRejected: true = o SAP respondeu explicitamente recusando (HTTP não-2xx) — nada foi criado
+          throw buildSapError(data.sapMessage || (typeof data.error === 'object' ? JSON.stringify(data.error) : data.error), group.U_Pedido, data.sapRejected === true);
         }
         if (data && data.data && data.data.error) {
           const sapErr = data.data.error;
           const msg = sapErr.message ? sapErr.message.value : JSON.stringify(sapErr);
-          throw new Error('Erro SAP: ' + msg);
+          // SAP respondeu 200 com um corpo de erro estruturado — também é uma recusa explícita
+          throw buildSapError('Erro SAP: ' + msg, group.U_Pedido, true);
         }
-        
+
         const sapDocNum = data?.data?.DocNum;
         if (sapDocNum) {
           groups[key].sapDocNumSaved = sapDocNum;
@@ -1067,7 +1080,7 @@ async function handleFinalizarRemessa() {
           }
         }
       } catch (postError) {
-        throw new Error(`Falha de comunicação no envio do pedido ${group.U_Pedido}: ${postError.message}`);
+        throw buildSapError(`Falha no envio do pedido ${group.U_Pedido}: ${postError.message}`, group.U_Pedido, postError.sapDefinitiveRejection === true);
       }
     }
 
@@ -1277,6 +1290,26 @@ async function handleFinalizarRemessa() {
       });
     } catch (err) {
     console.error(err);
+
+    if (err.sapDefinitiveRejection) {
+      // O SAP recusou o pedido explicitamente — nenhuma Nota foi criada, então é seguro
+      // liberar o romaneio pro operador corrigir os dados e finalizar novamente
+      try {
+        await supabase.from('expedicao_romaneios')
+          .update({ status: 'Em Andamento' })
+          .eq('id', currentRomaneio.id)
+          .eq('status', 'Faturando');
+        const cachedEntry = cachedRomaneios.find(r => r.id === currentRomaneio.id);
+        if (cachedEntry) cachedEntry.status = 'Em Andamento';
+      } catch (unlockError) {
+        console.error('Falha ao liberar romaneio apos recusa do SAP:', unlockError);
+      }
+      alert(`O SAP recusou o faturamento:\n\n${err.message}\n\nCorrija os dados e finalize novamente.`);
+      currentView = 'item_list';
+      renderCurrentView();
+      return;
+    }
+
     alert('Erro no envio ao SAP: ' + err.message + '\n\nPor segurança, este romaneio foi bloqueado para novas tentativas automáticas (evita duplicar Notas no SAP). Contate o suporte/TI para verificar no SAP quais pedidos desta OC já foram faturados antes de liberar um novo envio.');
     selectedOC = null;
     selectedLine = null;
@@ -1478,15 +1511,18 @@ async function handleFinalizarMercadoInterno() {
       });
 
       if (error) {
-        throw new Error(error.message || (data && data.error) || 'Erro desconhecido ao faturar no SAP');
+        // Erro de invocação da edge function — ambíguo, não dá pra saber se o SAP recebeu o pedido
+        throw buildSapError(error.message || (data && data.error) || 'Erro desconhecido ao faturar no SAP', group.U_Pedido, false);
       }
       if (data && data.error) {
-        throw new Error(typeof data.error === 'object' ? JSON.stringify(data.error) : data.error);
+        // sapRejected: true = o SAP respondeu explicitamente recusando (HTTP não-2xx) — nada foi criado
+        throw buildSapError(data.sapMessage || (typeof data.error === 'object' ? JSON.stringify(data.error) : data.error), group.U_Pedido, data.sapRejected === true);
       }
       if (data && data.data && data.data.error) {
         const sapErr = data.data.error;
         const msg = sapErr.message ? sapErr.message.value : JSON.stringify(sapErr);
-        throw new Error('Erro SAP: ' + msg);
+        // SAP respondeu 200 com um corpo de erro estruturado — também é uma recusa explícita
+        throw buildSapError('Erro SAP: ' + msg, group.U_Pedido, true);
       }
 
       const sapDocNum = data?.data?.DocNum;
@@ -1551,6 +1587,26 @@ async function handleFinalizarMercadoInterno() {
       });
     } catch (err) {
     console.error('Error in handleFinalizarMercadoInterno:', err);
+
+    if (err.sapDefinitiveRejection) {
+      // O SAP recusou o pedido explicitamente — nenhuma Nota foi criada, então é seguro
+      // liberar o romaneio pro operador corrigir os dados e finalizar novamente
+      try {
+        await supabase.from('expedicao_romaneios')
+          .update({ status: 'Em Andamento' })
+          .eq('id', currentRomaneio.id)
+          .eq('status', 'Faturando');
+        const cachedEntry = cachedRomaneios.find(r => r.id === currentRomaneio.id);
+        if (cachedEntry) cachedEntry.status = 'Em Andamento';
+      } catch (unlockError) {
+        console.error('Falha ao liberar romaneio apos recusa do SAP:', unlockError);
+      }
+      alert(`O SAP recusou o faturamento:\n\n${err.message}\n\nCorrija os dados e finalize novamente.`);
+      currentView = 'item_list';
+      renderCurrentView();
+      return;
+    }
+
     alert('Erro no envio ao SAP: ' + err.message + '\n\nPor segurança, este romaneio foi bloqueado para novas tentativas automáticas (evita duplicar Notas no SAP). Contate o suporte/TI para verificar no SAP quais pedidos desta OC já foram faturados antes de liberar um novo envio.');
     selectedOC = null;
     selectedLine = null;
