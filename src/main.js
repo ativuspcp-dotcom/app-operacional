@@ -20,7 +20,6 @@ export let currentBPLID = localStorage.getItem('app_bplid') ? parseInt(localStor
 
 export let cachedSapItems = [];
 export let cachedOps = [];
-export let activeOperators = [];
 export let isSyncing = false;
 export let initialLoadComplete = false;
 
@@ -81,13 +80,6 @@ export async function syncAppData() {
       .order('created_at', { ascending: true }), 60000);
     if (opData) cachedOps = opData;
 
-    // Fetch Operators
-    const { data: opersData } = await withTimeout(supabase
-      .from('app_apontadores')
-      .select('id, nome_completo, pin')
-      .eq('status', 'ATIVO'), 60000);
-    if (opersData) activeOperators = opersData;
-
     // Sync Romaneios if available
     if (window.syncRomaneioData) {
       await window.syncRomaneioData();
@@ -139,21 +131,23 @@ export function setBPLID(id) {
  * bypassing o Web Lock interno do supabase-js que trava o segundo insert.
  * Lê o token diretamente do localStorage para evitar qualquer chamada ao supabase-js.
  */
-async function rawInsert(table, payload) {
+function getAccessToken() {
   // Lê o token direto do localStorage — sem passar pelo supabase-js e seu Web Lock
   const storageKey = `sb-mqtyjzdwwgeycvmbiqsg-auth-token`;
-  let token = '';
   try {
     const raw = localStorage.getItem(storageKey);
-    if (raw) token = JSON.parse(raw)?.access_token || '';
+    if (raw) return JSON.parse(raw)?.access_token || '';
   } catch (_) {}
+  return '';
+}
 
+async function rawInsert(table, payload) {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'apikey': SUPABASE_ANON_KEY,
-      'Authorization': `Bearer ${token}`,
+      'Authorization': `Bearer ${getAccessToken()}`,
       'Prefer': 'return=representation'
     },
     body: JSON.stringify(payload)
@@ -162,6 +156,22 @@ async function rawInsert(table, payload) {
   if (!res.ok) return { data: null, error: json };
   const record = Array.isArray(json) ? json[0] : json;
   return { data: record, error: null };
+}
+
+/** rawRpc: chama uma função Postgres (RPC) via fetch nativo, pelo mesmo motivo do rawInsert. */
+async function rawRpc(fn, args) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${fn}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'apikey': SUPABASE_ANON_KEY,
+      'Authorization': `Bearer ${getAccessToken()}`
+    },
+    body: JSON.stringify(args)
+  });
+  const json = await res.json();
+  if (!res.ok) return { data: null, error: json };
+  return { data: json, error: null };
 }
 
 async function loadUserProfile(userId) {
@@ -541,7 +551,7 @@ async function renderAmarracao(container) {
 
           <div class="form-group" style="margin-top: 32px; border-top: 1px solid var(--color-border); padding-top: 24px;">
             <label class="form-label text-center">Senha (PIN)</label>
-            <input type="password" id="pin" class="form-input pin-input" inputmode="numeric" maxlength="4" placeholder="****" required>
+            <input type="text" id="pin" class="form-input pin-input" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="****" required autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore data-bwignore>
           </div>
 
           <div class="form-group">
@@ -734,8 +744,11 @@ async function renderAmarracao(container) {
       formError.textContent = '';
       
       try {
-        const data = activeOperators.find(op => String(op.pin) === String(val));
-          
+        // PIN validado no servidor (função validar_pin): o PIN dos operadores nunca chega ao dispositivo
+        const { data: rows, error: pinError } = await withTimeout(rawRpc('validar_pin', { p_pin: val }), 15000);
+        if (pinError) throw new Error(pinError.message || 'PIN_ERRO');
+        const data = rows && rows[0];
+
         if (!data) {
           formError.textContent = 'PIN Inválido ou Inativo.';
           respInput.value = '';
@@ -753,7 +766,9 @@ async function renderAmarracao(container) {
         }
       } catch (err) {
         console.error(err);
-        formError.textContent = 'Erro ao validar. Tente novamente.';
+        formError.textContent = String(err.message).includes('PIN_BLOQUEADO')
+          ? 'Muitas tentativas com PIN errado. Aguarde 5 minutos e tente novamente.'
+          : 'Erro ao validar. Tente novamente.';
         respInput.value = '';
         respIdInput.value = '';
         pinInput.disabled = false;

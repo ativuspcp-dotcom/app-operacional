@@ -189,6 +189,9 @@ input, button, select, textarea {
   text-align: center;
   font-weight: 700;
   padding: 20px !important;
+  /* Máscara visual sem type="password": gerenciadores de senha do navegador não oferecem salvar/sugerir o PIN */
+  -webkit-text-security: disc;
+  text-security: disc;
 }
 .success-text {
   color: var(--green-500);
