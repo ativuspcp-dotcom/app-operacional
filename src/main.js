@@ -1,6 +1,7 @@
 import './style.css';
 import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from './supabase.js';
 import { renderRomaneioSaida } from './romaneio-saida.js';
+import { renderSetupSecadores, renderSetupSecadorForm } from './setup-secadores.js';
 
 // Força o recarregamento automático da página quando houver uma nova versão do app (PWA)
 if ('serviceWorker' in navigator) {
@@ -159,7 +160,7 @@ async function rawInsert(table, payload) {
 }
 
 /** rawRpc: chama uma função Postgres (RPC) via fetch nativo, pelo mesmo motivo do rawInsert. */
-async function rawRpc(fn, args) {
+export async function rawRpc(fn, args) {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${fn}`, {
     method: 'POST',
     headers: {
@@ -191,6 +192,36 @@ async function loadUserProfile(userId) {
   } catch (e) {
     console.error('Error loading profile', e);
   }
+}
+
+/**
+ * Permissões da estação por módulo: can_view (entrar/consultar) e can_actions (registrar, alterar, excluir).
+ * Cacheado em currentPermissions.
+ */
+export async function loadPermissions() {
+  if (currentPermissions.length > 0) return currentPermissions;
+
+  const { data, error } = await withTimeout(supabase
+    .from('user_module_permissions')
+    .select(`
+      can_view,
+      can_actions,
+      modules (
+        name, slug, icon, type, group_name
+      )
+    `)
+    .eq('user_id', currentSession.user.id)
+    .eq('can_view', true), 10000);
+
+  if (error) throw error;
+  currentPermissions = data || [];
+  return currentPermissions;
+}
+
+/** Admin e super_admin podem tudo (igual ao portal); as demais contas precisam de "Ações" no módulo. */
+export function podeAgir(slug) {
+  if (userProfile && ['super_admin', 'admin'].includes(userProfile.role)) return true;
+  return currentPermissions.some(p => p.modules?.slug === slug && p.can_actions);
 }
 
 export function renderBranchSelector() {
@@ -238,7 +269,13 @@ async function init() {
   supabase.auth.onAuthStateChange((event, session) => {
     const wasSignedIn = !!currentSession;
     currentSession = session;
-    
+
+    // Outro login na mesma aba não pode herdar as permissões do usuário anterior
+    if (event === 'SIGNED_OUT' || (event === 'SIGNED_IN' && !wasSignedIn)) {
+      currentPermissions = [];
+      if (event === 'SIGNED_OUT') userProfile = null;
+    }
+
     if (event === 'SIGNED_IN' && session && !wasSignedIn) {
       // setTimeout(0): sai do lock interno do supabase-js antes de fazer chamadas
       // Apenas no login real (wasSignedIn=false), nunca em renovações de token
@@ -286,12 +323,23 @@ async function route() {
     return;
   }
 
+  // Módulos consultam podeAgir() de forma síncrona: garante as permissões carregadas antes de renderizar
+  try {
+    await loadPermissions();
+  } catch (err) {
+    console.error('Erro ao carregar permissões:', err);
+  }
+
   if (path === '/') {
     await renderHome(app);
   } else if (path === '/amarracao') {
     renderAmarracao(app);
   } else if (path === '/romaneio-saida') {
     renderRomaneioSaida(app);
+  } else if (path === '/setup-secadores') {
+    renderSetupSecadores(app);
+  } else if (path.startsWith('/setup-secadores/')) {
+    renderSetupSecadorForm(app, decodeURIComponent(path.split('/')[2]));
   } else {
     app.innerHTML = '<div class="container text-center mt-4">Página não encontrada. <br><br><button class="btn btn-primary" onclick="window.location.hash=\'/\'">Voltar</button></div>';
   }
@@ -373,27 +421,12 @@ async function renderHome(container) {
   });
 
   try {
-    let perms = currentPermissions;
-    
-    if (!perms || perms.length === 0) {
-      const { data, error } = await withTimeout(supabase
-        .from('user_module_permissions')
-        .select(`
-          can_view,
-          modules (
-            name, slug, icon, type, group_name
-          )
-        `)
-        .eq('user_id', currentSession.user.id)
-        .eq('can_view', true), 10000);
-  
-      if (error) {
-        document.getElementById('home-content').innerHTML = `<div class="text-center mt-4" style="color: #ef4444;">Erro ao carregar permissões: ${error.message}</div>`;
-        return;
-      }
-      
-      perms = data || [];
-      currentPermissions = perms;
+    let perms;
+    try {
+      perms = await loadPermissions();
+    } catch (error) {
+      document.getElementById('home-content').innerHTML = `<div class="text-center mt-4" style="color: #ef4444;">Erro ao carregar permissões: ${error.message}</div>`;
+      return;
     }
 
     if (!perms || perms.length === 0) {
@@ -432,6 +465,8 @@ async function renderHome(container) {
         iconSvg = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>';
       } else if (mod.slug === 'app_romaneio_saida') {
         iconSvg = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 17h4V5H2v12h3"></path><path d="M20 17h2v-9h-4V5H14v12h3"></path><path d="M14 17c0 1.66-1.34 3-3 3s-3-1.34-3-3s1.34-3 3-3s3 1.34 3 3z"></path></svg>';
+      } else if (mod.slug === 'app_setup_secadores') {
+        iconSvg = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"></line><line x1="4" y1="10" x2="4" y2="3"></line><line x1="12" y1="21" x2="12" y2="12"></line><line x1="12" y1="8" x2="12" y2="3"></line><line x1="20" y1="21" x2="20" y2="16"></line><line x1="20" y1="12" x2="20" y2="3"></line><line x1="1" y1="14" x2="7" y2="14"></line><line x1="9" y1="8" x2="15" y2="8"></line><line x1="17" y1="16" x2="23" y2="16"></line></svg>';
       }
 
       card.innerHTML = `
@@ -444,6 +479,8 @@ async function renderHome(container) {
           window.location.hash = '/amarracao';
         } else if (mod.slug === 'app_romaneio_saida') {
           window.location.hash = '/romaneio-saida';
+        } else if (mod.slug === 'app_setup_secadores') {
+          window.location.hash = '/setup-secadores';
         } else {
           alert('Módulo ' + mod.name + ' em desenvolvimento.');
         }
@@ -789,6 +826,7 @@ async function renderAmarracao(container) {
     e.preventDefault();
     formError.textContent = '';
     formSuccess.textContent = '';
+    if (!podeAgir('app_amarracao')) return;
     console.log('[AMARRACAO LOG-1] Submit disparado. selectedItem:', !!selectedItem, '| respIdInput:', respIdInput.value);
 
     if (!selectedItem) {
@@ -941,6 +979,12 @@ async function renderAmarracao(container) {
       `;
     }
   });
+
+  if (!podeAgir('app_amarracao')) {
+    const form = document.getElementById('amarracao-form');
+    form.querySelectorAll('input, select, button').forEach(el => { el.disabled = true; });
+    form.insertAdjacentHTML('afterbegin', '<div class="text-center error-text mb-4">Somente visualização: seu acesso não permite registrar apontamentos.</div>');
+  }
 }
 
 init();

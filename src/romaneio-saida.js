@@ -1,5 +1,7 @@
 import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from './supabase.js';
-import { currentBPLID, renderBranchSelector, bindBranchSelector, withTimeout } from './main.js';
+import { currentBPLID, renderBranchSelector, bindBranchSelector, withTimeout, podeAgir } from './main.js';
+
+const ROMANEIO_SLUG = 'app_romaneio_saida';
 
 /**
  * rawInsert: fetch nativo direto para a API REST do Supabase,
@@ -135,6 +137,9 @@ export async function renderRomaneioSaida(container) {
 }
 
 async function renderCurrentView() {
+  // Sem "Ações" não há bipagem: um estado salvo em sessão não pode reabrir o scanner
+  if (currentView === 'scanner' && !podeAgir(ROMANEIO_SLUG)) currentView = 'item_list';
+
   if (currentScanner) {
     try {
       if (currentScanner.isScanning) {
@@ -342,6 +347,7 @@ async function renderItemList() {
   }
 
   const canFinalize = allLinesMet && minVolMet;
+  const podeAgirRomaneio = podeAgir(ROMANEIO_SLUG);
 
   const content = document.getElementById('rs-content');
   const totalBipadoKg = scannedPackages.reduce((sum, p) => sum + (Number(p.peso) || 0), 0);
@@ -366,9 +372,11 @@ async function renderItemList() {
         ${minVolChecklistHTML}
       </div>
 
-      ${canFinalize && scannedPackages.length > 0 
-        ? '<button id="btn-finalizar-romaneio" class="btn btn-success" style="width: 100%; margin-top: 16px; font-weight: bold;">FINALIZAR ROMANEIO</button>' 
-        : '<div style="text-align:center; padding: 12px; background: #fff3e0; color: #e65100; border-radius: 8px; margin-top: 16px; font-size: 0.9rem;">Cumpra o Checklist e bipe pacotes para liberar.</div>'}
+      ${!podeAgirRomaneio
+        ? '<div style="text-align:center; padding: 12px; background: #fff3e0; color: #e65100; border-radius: 8px; margin-top: 16px; font-size: 0.9rem;">Somente visualização: seu acesso não permite bipar nem finalizar romaneios.</div>'
+        : canFinalize && scannedPackages.length > 0
+          ? '<button id="btn-finalizar-romaneio" class="btn btn-success" style="width: 100%; margin-top: 16px; font-weight: bold;">FINALIZAR ROMANEIO</button>'
+          : '<div style="text-align:center; padding: 12px; background: #fff3e0; color: #e65100; border-radius: 8px; margin-top: 16px; font-size: 0.9rem;">Cumpra o Checklist e bipe pacotes para liberar.</div>'}
     </div>
   `;
 
@@ -413,6 +421,7 @@ async function renderItemList() {
 
   document.querySelectorAll('.item-card').forEach(card => {
     card.addEventListener('click', () => {
+      if (!podeAgirRomaneio) return;
       selectedLine = data.find(d => d.id === card.dataset.id);
       currentView = 'scanner';
       renderCurrentView();
@@ -598,6 +607,7 @@ async function renderScanner() {
 }
 
 async function handleScan(qrcode) {
+  if (!podeAgir(ROMANEIO_SLUG)) return;
   const msgDiv = document.getElementById('rs-scan-msg');
   const showScanMsg = (msg, type) => {
     msgDiv.textContent = msg;
@@ -873,6 +883,7 @@ function buildSapError(message, pedido, isDefinitiveRejection) {
 }
 
 async function handleFinalizar() {
+  if (!podeAgir(ROMANEIO_SLUG)) return;
   // Bloqueia reentrância: um duplo-toque no botão não pode disparar duas execuções
   // concorrentes, senão ambas passam pela checagem de "já faturado" antes que a
   // primeira termine de gravar, e duplicam a Nota no SAP
