@@ -2,6 +2,7 @@ import './style.css';
 import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from './supabase.js';
 import { renderRomaneioSaida } from './romaneio-saida.js';
 import { renderSetupSecadores, renderSetupSecadorForm } from './setup-secadores.js';
+import { renderProducaoSecagem } from './producao-secagem.js';
 
 // Força o recarregamento automático da página quando houver uma nova versão do app (PWA)
 if ('serviceWorker' in navigator) {
@@ -218,6 +219,11 @@ export async function loadPermissions() {
   return currentPermissions;
 }
 
+/** Id do usuário logado nesta estação (para tablet_user_id/created_by nos inserts dos módulos). */
+export function getCurrentUserId() {
+  return currentSession?.user?.id || null;
+}
+
 /** Admin e super_admin podem tudo (igual ao portal); as demais contas precisam de "Ações" no módulo. */
 export function podeAgir(slug) {
   if (userProfile && ['super_admin', 'admin'].includes(userProfile.role)) return true;
@@ -340,6 +346,8 @@ async function route() {
     renderSetupSecadores(app);
   } else if (path.startsWith('/setup-secadores/')) {
     renderSetupSecadorForm(app, decodeURIComponent(path.split('/')[2]));
+  } else if (path === '/producao-secagem') {
+    renderProducaoSecagem(app);
   } else {
     app.innerHTML = '<div class="container text-center mt-4">Página não encontrada. <br><br><button class="btn btn-primary" onclick="window.location.hash=\'/\'">Voltar</button></div>';
   }
@@ -467,6 +475,8 @@ async function renderHome(container) {
         iconSvg = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 17h4V5H2v12h3"></path><path d="M20 17h2v-9h-4V5H14v12h3"></path><path d="M14 17c0 1.66-1.34 3-3 3s-3-1.34-3-3s1.34-3 3-3s3 1.34 3 3z"></path></svg>';
       } else if (mod.slug === 'app_setup_secadores') {
         iconSvg = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"></line><line x1="4" y1="10" x2="4" y2="3"></line><line x1="12" y1="21" x2="12" y2="12"></line><line x1="12" y1="8" x2="12" y2="3"></line><line x1="20" y1="21" x2="20" y2="16"></line><line x1="20" y1="12" x2="20" y2="3"></line><line x1="1" y1="14" x2="7" y2="14"></line><line x1="9" y1="8" x2="15" y2="8"></line><line x1="17" y1="16" x2="23" y2="16"></line></svg>';
+      } else if (mod.slug === 'app_secagem') {
+        iconSvg = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v6"></path><path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.5-2.5-5.5S13 5 12 2c-1 3-2.5 5-4.5 7.5S5 13 5 15a7 7 0 0 0 7 7z"></path></svg>';
       }
 
       card.innerHTML = `
@@ -481,6 +491,8 @@ async function renderHome(container) {
           window.location.hash = '/romaneio-saida';
         } else if (mod.slug === 'app_setup_secadores') {
           window.location.hash = '/setup-secadores';
+        } else if (mod.slug === 'app_secagem') {
+          window.location.hash = '/producao-secagem';
         } else {
           alert('Módulo ' + mod.name + ' em desenvolvimento.');
         }

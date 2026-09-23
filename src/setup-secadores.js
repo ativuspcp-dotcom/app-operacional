@@ -10,14 +10,16 @@ const TURNOS = ['00:00 - 06:00', '06:00 - 12:00', '12:00 - 18:00', '18:00 - 00:0
 
 // Regras de preenchimento por secador (por nome). Também existem na função do banco salvar_setup_secador
 // (a que valida de verdade) e no portal (SECADOR_CONFIG em pages/op/secagem.js): alterar nos 3 lugares.
+// FEZER: Comprimento fixo, Largura variável. OMECO: Comprimento variável, Largura condicional
+// ao Comprimento escolhido (corrigido em 2026-09-23 — estava com os dois nomes trocados).
 const CONFIG = {
   FEZER: {
-    larguras: [2.6],
-    comprimentosFor: () => [1.3, 0.87]
+    comprimentos: [2.6],
+    largurasFor: () => [1.3, 0.87]
   },
   OMECO: {
-    larguras: [2.6, 1.3],
-    comprimentosFor: (largura) => (largura === 2.6 ? [1.3, 0.87] : [0.87])
+    comprimentos: [2.6, 1.3],
+    largurasFor: (comprimento) => (comprimento === 2.6 ? [1.3, 0.87] : [0.87])
   }
 };
 
@@ -47,7 +49,8 @@ function bindHeader() {
 
 // Secadores cadastrados na filial atual (pcp_secadores) e o setup ativo de cada um.
 // Sequencial de propósito: o supabase-js trava com várias chamadas simultâneas (Web Lock).
-async function fetchSecadoresEAtivos() {
+// Reaproveitada em producao-secagem.js para montar o campo "Local" do apontamento.
+export async function fetchSecadoresEAtivos() {
   const { data: sec, error: secError } = await withTimeout(
     supabase.from('pcp_secadores').select('nome').eq('bpl_id', currentBPLID).eq('ativo', true).order('nome'),
     10000
@@ -195,8 +198,8 @@ export async function renderSetupSecadorForm(container, secador) {
   const state = {
     tipo: ativo?.tipo ?? null,
     especie: ativo?.especie ?? null,
-    largura: ativo ? Number(ativo.largura) : config.larguras[0],
-    comprimento: ativo ? Number(ativo.comprimento) : null,
+    comprimento: ativo ? Number(ativo.comprimento) : config.comprimentos[0],
+    largura: ativo ? Number(ativo.largura) : null,
     bitola: ativo ? Number(ativo.bitola) : null,
     turno: ativo?.turno ?? null
   };
@@ -222,13 +225,13 @@ export async function renderSetupSecadorForm(container, secador) {
         </div>
 
         <div class="form-group">
-          <label class="form-label">Largura (m) <span class="required">*</span></label>
-          <div id="wrap-largura"></div>
+          <label class="form-label">Comprimento (m) <span class="required">*</span></label>
+          <div id="wrap-comprimento"></div>
         </div>
 
         <div class="form-group">
-          <label class="form-label">Comprimento (m) <span class="required">*</span></label>
-          <div id="wrap-comprimento"></div>
+          <label class="form-label">Largura (m) <span class="required">*</span></label>
+          <div id="wrap-largura"></div>
         </div>
 
         <div class="form-group">
@@ -271,23 +274,23 @@ export async function renderSetupSecadorForm(container, secador) {
   const formularioCompleto = () => Object.values(state).every(v => v !== null && v !== undefined);
   const atualizarBotao = () => { btnSave.disabled = !(formularioCompleto() && responsavelValidado); };
 
-  const renderLargura = () => {
-    document.getElementById('wrap-largura').innerHTML = toggleHtml('toggle-largura', config.larguras, state.largura, fmtDim);
-    bindToggle('toggle-largura', (v) => {
-      state.largura = Number(v);
-      renderComprimento();
+  const renderComprimento = () => {
+    document.getElementById('wrap-comprimento').innerHTML = toggleHtml('toggle-comprimento', config.comprimentos, state.comprimento, fmtDim);
+    bindToggle('toggle-comprimento', (v) => {
+      state.comprimento = Number(v);
+      renderLargura();
       atualizarBotao();
     });
   };
 
-  const renderComprimento = () => {
-    const opcoes = config.comprimentosFor(state.largura);
-    if (!opcoes.includes(state.comprimento)) {
-      state.comprimento = opcoes.length === 1 ? opcoes[0] : null;
+  const renderLargura = () => {
+    const opcoes = config.largurasFor(state.comprimento);
+    if (!opcoes.includes(state.largura)) {
+      state.largura = opcoes.length === 1 ? opcoes[0] : null;
     }
-    document.getElementById('wrap-comprimento').innerHTML = toggleHtml('toggle-comprimento', opcoes, state.comprimento, fmtDim);
-    bindToggle('toggle-comprimento', (v) => {
-      state.comprimento = Number(v);
+    document.getElementById('wrap-largura').innerHTML = toggleHtml('toggle-largura', opcoes, state.largura, fmtDim);
+    bindToggle('toggle-largura', (v) => {
+      state.largura = Number(v);
       atualizarBotao();
     });
   };
@@ -307,8 +310,8 @@ export async function renderSetupSecadorForm(container, secador) {
   bindToggle('toggle-especie', (v) => { state.especie = v; atualizarBotao(); });
   document.getElementById('sel-bitola').addEventListener('change', (e) => { state.bitola = Number(e.target.value); atualizarBotao(); });
   document.getElementById('sel-turno').addEventListener('change', (e) => { state.turno = e.target.value; atualizarBotao(); });
-  renderLargura();
   renderComprimento();
+  renderLargura();
   atualizarBotao();
 
   const limparResponsavel = () => {
