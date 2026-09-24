@@ -12,6 +12,14 @@ const SPINNER = '<div style="width: 32px; height: 32px; margin: 0 auto; border: 
 
 const fmtBitola = (v) => Number(v).toFixed(1).replace('.', ',');
 const fmtMedida = (v) => Number(v).toFixed(3).replace('.', ',');
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+// Ordem de exibição das Opções (a mesma da tela de Configurações do portal).
+const ORDEM_OPCOES = ['A', 'B', 'C', 'CP', 'D', 'L', 'G', 'CASCA'];
+const posicaoOpcao = (opcao) => {
+  const i = ORDEM_OPCOES.indexOf(opcao);
+  return i === -1 ? ORDEM_OPCOES.length : i;
+};
 
 // Códigos de U_Class / U_Quality no SAP (mesmos da tela Lâminas Secas do portal).
 const CLASSES_SAP = { CAPA: '601', ENCHIMENTO: '602', MIOLO: '603' };
@@ -149,38 +157,17 @@ export async function renderProducaoSecagem(container) {
     <div style="background: white; padding: 24px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
       ${!podeApontar ? '<div class="text-center error-text mb-4">Somente visualização: seu acesso não permite registrar apontamentos.</div>' : ''}
       <form id="ps-form" autocomplete="off">
-        <div class="form-group">
-          <label class="form-label">Data Produção <span class="required">*</span></label>
-          <input type="date" id="ps-data-producao" class="form-input" value="${today}" required>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label">Local <span class="required">*</span></label>
-          <select id="ps-local" class="form-input" style="appearance: auto; height: 48px; background-color: var(--dark-300);" required>
-            <option value="" disabled selected>Selecione...</option>
-            ${locaisComSetup.map(l => `<option value="${l.nome}" ${!l.op ? 'disabled' : ''}>${l.nome}${!l.op ? ' (sem setup ativo)' : ''}</option>`).join('')}
-          </select>
-        </div>
-
         <div class="grid-2">
           <div class="form-group">
-            <label class="form-label">Turno</label>
-            <input type="text" id="ps-turno" class="form-input input-readonly" readonly placeholder="-">
+            <label class="form-label">Data Produção <span class="required">*</span></label>
+            <input type="date" id="ps-data-producao" class="form-input" value="${today}" required>
           </div>
           <div class="form-group">
-            <label class="form-label">Modo</label>
-            <input type="text" id="ps-modo" class="form-input input-readonly" readonly placeholder="-">
-          </div>
-        </div>
-
-        <div class="grid-2">
-          <div class="form-group">
-            <label class="form-label">Espécie</label>
-            <input type="text" id="ps-especie" class="form-input input-readonly" readonly placeholder="-">
-          </div>
-          <div class="form-group">
-            <label class="form-label">Bitola (mm)</label>
-            <input type="text" id="ps-bitola" class="form-input input-readonly" readonly placeholder="-">
+            <label class="form-label">Local <span class="required">*</span></label>
+            <select id="ps-local" class="form-input" style="appearance: auto; height: 48px; background-color: var(--dark-300);" required>
+              <option value="" disabled selected>Selecione...</option>
+              ${locaisComSetup.map(l => `<option value="${l.nome}" ${!l.op ? 'disabled' : ''}>${l.nome}${!l.op ? ' (sem setup ativo)' : ''}</option>`).join('')}
+            </select>
           </div>
         </div>
 
@@ -192,22 +179,11 @@ export async function renderProducaoSecagem(container) {
         </div>
 
         <div class="form-group">
-          <label class="form-label">Cód. Item</label>
-          <input type="text" id="ps-cod-item" class="form-input input-readonly" readonly placeholder="-">
+          <label class="form-label">Produto encontrado</label>
+          <div id="ps-produto" style="min-height: 64px; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--color-border); background: var(--dark-300); display: flex; flex-direction: column; justify-content: center;"></div>
         </div>
 
-        <div class="form-group">
-          <label class="form-label">Item</label>
-          <input type="text" id="ps-item" class="form-input input-readonly" readonly placeholder="-">
-          <div id="ps-item-msg" style="font-size: 0.85rem; margin-top: 6px; min-height: 18px;"></div>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label">Modo Cubagem</label>
-          <input type="text" id="ps-modo-cubagem" class="form-input input-readonly" readonly placeholder="-">
-        </div>
-
-        <div class="grid-2">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0 16px;">
           <div class="form-group">
             <label class="form-label" id="ps-quantidade-label">Altura/Peças <span class="required">*</span></label>
             <input type="number" id="ps-altura-pecas" class="form-input" step="any" min="0" required>
@@ -216,11 +192,10 @@ export async function renderProducaoSecagem(container) {
             <label class="form-label">Desconto (%)</label>
             <input type="number" id="ps-desconto" class="form-input" step="1" min="0" max="100" value="0">
           </div>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label">Total (m³)</label>
-          <input type="text" id="ps-total" class="form-input input-readonly" readonly placeholder="-">
+          <div class="form-group">
+            <label class="form-label">Total (m³)</label>
+            <input type="text" id="ps-total" class="form-input input-readonly" readonly placeholder="-">
+          </div>
         </div>
 
         <div class="grid-2">
@@ -240,15 +215,16 @@ export async function renderProducaoSecagem(container) {
           </div>
         </div>
 
-        <div class="form-group" style="margin-top: 32px; border-top: 1px solid var(--color-border); padding-top: 24px;">
-          <label class="form-label text-center">Senha (PIN)</label>
-          <input type="text" id="pin" class="form-input pin-input" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="****" required autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore data-bwignore>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label text-center">Responsável</label>
-          <input type="text" id="responsavel_nome" class="form-input input-readonly text-center" style="font-size: 1.2rem;" readonly placeholder="Aguardando PIN...">
-          <input type="hidden" id="responsavel_id">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0 16px; margin-top: 8px; border-top: 1px solid var(--color-border); padding-top: 16px;">
+          <div class="form-group">
+            <label class="form-label text-center">Senha (PIN)</label>
+            <input type="text" id="pin" class="form-input pin-input" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="****" required autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore data-bwignore>
+          </div>
+          <div class="form-group">
+            <label class="form-label text-center">Responsável</label>
+            <input type="text" id="responsavel_nome" class="form-input input-readonly text-center" style="font-size: 1rem;" readonly placeholder="Aguardando PIN...">
+            <input type="hidden" id="responsavel_id">
+          </div>
         </div>
 
         <div id="form-error" class="text-center error-text mb-4"></div>
@@ -277,23 +253,17 @@ async function fetchRegrasCubagem(secador, comprimento, largura) {
     .select('opcao, classe, modo_cubagem, comprimento_override, largura_override, desconto')
     .eq('secador', secador)
     .eq('comprimento_setup', comprimento)
-    .eq('largura_setup', largura)
-    .order('opcao');
+    .eq('largura_setup', largura);
   if (error) throw error;
-  return data || [];
+  // Ordem fixa pedida pelo usuário (também usada na tela de Configurações do portal). Opção fora da
+  // lista (nova, cadastrada depois) vai para o fim, em ordem alfabética.
+  return (data || []).sort((a, b) => posicaoOpcao(a.opcao) - posicaoOpcao(b.opcao) || a.opcao.localeCompare(b.opcao));
 }
 
 function bindForm(locaisComSetup) {
   const localSelect = document.getElementById('ps-local');
-  const turnoInput = document.getElementById('ps-turno');
-  const modoInput = document.getElementById('ps-modo');
-  const especieInput = document.getElementById('ps-especie');
-  const bitolaInput = document.getElementById('ps-bitola');
   const opcaoSelect = document.getElementById('ps-opcao');
-  const modoCubagemInput = document.getElementById('ps-modo-cubagem');
-  const codItemInput = document.getElementById('ps-cod-item');
-  const itemInput = document.getElementById('ps-item');
-  const itemMsg = document.getElementById('ps-item-msg');
+  const produtoBox = document.getElementById('ps-produto');
   const quantidadeLabel = document.getElementById('ps-quantidade-label');
   const quantidadeInput = document.getElementById('ps-altura-pecas');
   const descontoInput = document.getElementById('ps-desconto');
@@ -311,18 +281,32 @@ function bindForm(locaisComSetup) {
     largura: Number(regraSelecionada.largura_override ?? opSelecionada.largura)
   });
 
-  const mostrarMsgItem = (texto, erro) => {
-    itemMsg.textContent = texto;
-    itemMsg.style.color = erro ? 'var(--color-error, #ef4444)' : 'var(--color-text-sec)';
+  // Cartão único do produto: mostra o item achado, um aviso (busca em andamento) ou o erro (bloqueia o apontamento).
+  const mostrarProduto = ({ item, texto, erro }) => {
+    if (item) {
+      produtoBox.style.background = 'var(--green-50)';
+      produtoBox.style.borderColor = 'var(--green-400)';
+      produtoBox.innerHTML = `
+        <div style="font-size: 0.8rem; color: var(--color-text-sec); font-family: monospace;">${esc(item.codigo)}</div>
+        <div style="font-weight: 700; font-size: 1.05rem;">${esc(item.nome)}</div>`;
+    } else if (erro) {
+      produtoBox.style.background = '#fef2f2';
+      produtoBox.style.borderColor = '#ef4444';
+      produtoBox.innerHTML = `<div style="color: #ef4444; font-weight: 600; font-size: 0.95rem;">${esc(texto)}</div>`;
+    } else {
+      produtoBox.style.background = 'var(--dark-300)';
+      produtoBox.style.borderColor = 'var(--color-border)';
+      produtoBox.innerHTML = `<div style="color: var(--color-text-sec); font-size: 0.95rem;">${esc(texto || 'Selecione a Opção para ver o produto.')}</div>`;
+    }
   };
+  const mostrarMsgItem = (texto, erro) => mostrarProduto({ texto, erro });
 
   const limparItem = () => {
     buscaItemId++;
     itemSelecionado = null;
-    codItemInput.value = '';
-    itemInput.value = '';
-    mostrarMsgItem('', false);
+    mostrarProduto({});
   };
+  mostrarProduto({});
 
   const atualizarRotuloQuantidade = () => {
     const modo = regraSelecionada?.modo_cubagem;
@@ -374,9 +358,7 @@ function bindForm(locaisComSetup) {
 
       if (r.item) {
         itemSelecionado = r.item;
-        codItemInput.value = r.item.codigo;
-        itemInput.value = r.item.nome;
-        mostrarMsgItem('', false);
+        mostrarProduto({ item: r.item });
       } else if (r.erro === 'CLASSE_INDEFINIDA') {
         mostrarMsgItem('Esta Opção está sem Classe definida. Peça ao PCP para preencher em Configurações. Apontamento bloqueado.', true);
       } else if (r.erro === 'MAIS_DE_UM') {
@@ -396,7 +378,6 @@ function bindForm(locaisComSetup) {
     regraSelecionada = null;
     opcaoSelect.innerHTML = `<option value="" selected>${placeholder}</option>`;
     opcaoSelect.disabled = true;
-    modoCubagemInput.value = '';
     limparItem();
     atualizarRotuloQuantidade();
     atualizarTotal();
@@ -405,11 +386,6 @@ function bindForm(locaisComSetup) {
   localSelect.addEventListener('change', async () => {
     const local = locaisComSetup.find(l => l.nome === localSelect.value);
     opSelecionada = local?.op || null;
-
-    turnoInput.value = opSelecionada?.turno || '';
-    modoInput.value = opSelecionada?.tipo || '';
-    especieInput.value = opSelecionada?.especie || '';
-    bitolaInput.value = opSelecionada ? fmtBitola(opSelecionada.bitola) : '';
 
     if (!opSelecionada) {
       limparOpcao('Selecione o Local');
@@ -436,7 +412,6 @@ function bindForm(locaisComSetup) {
 
   opcaoSelect.addEventListener('change', () => {
     regraSelecionada = regrasDisponiveis.find(r => r.opcao === opcaoSelect.value) || null;
-    modoCubagemInput.value = regraSelecionada?.modo_cubagem || '';
     if (regraSelecionada) {
       descontoInput.value = regraSelecionada.desconto;
     }
