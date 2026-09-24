@@ -28,28 +28,36 @@ function calcularTotal({ modoCubagem, comprimento, largura, bitolaMm, quantidade
   return Number((base * (1 - desconto / 100)).toFixed(4));
 }
 
+// Cache das lâminas secas do SAP (grupo 145): carregado ao entrar na tela e mantido em memória.
+// Para atualizar, o usuário recarrega o app rolando a tela para baixo (mesmo jeito do compensado).
+let carregamentoItensSap = null;
+
+async function carregarItensSap() {
+  const url = encodeURI("/api/Items?$select=ItemCode,ItemName,SalesFactor1,SalesFactor2,SalesFactor3,U_Class,U_Quality&$filter=ItemsGroupCode eq 145 and Properties1 eq 'tYES'");
+  const res = await withTimeout(fetch(url, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true', 'Prefer': 'odata.maxpagesize=0' }
+  }), 60000);
+  if (!res.ok) throw new Error(`SAP respondeu ${res.status}`);
+  return (await res.json()).value || [];
+}
+
 /**
- * Acha a lâmina seca no SAP (grupo 145). A espécie só existe no nome do item, por isso o filtro por texto;
+ * Acha a lâmina seca na lista carregada do SAP. A espécie só existe no nome do item (filtro por texto);
  * a bitola vem do SAP em metros (0,0015 = 1,5 mm). Medidas comparadas com tolerância (números decimais).
- * Devolve { item } ou { erro: 'NAO_ENCONTRADO' | 'MAIS_DE_UM' | 'CLASSE_INDEFINIDA' }; lança se o SAP não responder.
+ * Devolve { item } ou { erro: 'NAO_ENCONTRADO' | 'MAIS_DE_UM' | 'CLASSE_INDEFINIDA' }.
  */
-async function buscarItemSap({ especie, classe, opcao, comprimento, largura, bitolaMm }) {
+function acharItemSap(itens, { especie, classe, opcao, comprimento, largura, bitolaMm }) {
   const uClass = CLASSES_SAP[classe];
   const uQuality = QUALIDADES_SAP[opcao];
   if (!uClass) return { erro: 'CLASSE_INDEFINIDA' };
   if (!uQuality) return { erro: 'NAO_ENCONTRADO' };
 
-  const filtro = `ItemsGroupCode eq 145 and Properties1 eq 'tYES' and U_Class eq '${uClass}' and U_Quality eq '${uQuality}' and contains(ItemName,'${especie}')`;
-  const url = encodeURI(`/api/Items?$select=ItemCode,ItemName,SalesFactor1,SalesFactor2,SalesFactor3&$filter=${filtro}`);
-  const res = await withTimeout(fetch(url, {
-    method: 'GET',
-    headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true', 'Prefer': 'odata.maxpagesize=0' }
-  }), 15000);
-  if (!res.ok) throw new Error(`SAP respondeu ${res.status}`);
-
-  const itens = (await res.json()).value || [];
   const bate = (valor, esperado, tolerancia) => Math.abs(Number(valor) - esperado) < tolerancia;
   const achados = itens.filter(i =>
+    i.U_Class === uClass &&
+    i.U_Quality === uQuality &&
+    String(i.ItemName || '').toUpperCase().includes(especie) &&
     bate(i.SalesFactor1, comprimento, 0.0005) &&
     bate(i.SalesFactor2, largura, 0.0005) &&
     bate(Number(i.SalesFactor3) * 1000, bitolaMm, 0.005)
@@ -89,6 +97,11 @@ async function rawInsert(table, payload) {
 }
 
 export async function renderProducaoSecagem(container) {
+  // Carrega os itens do SAP em segundo plano assim que a tela abre; o .catch evita aviso de rejeição
+  // não tratada (quem usa o resultado trata o erro no seu próprio try/catch).
+  carregamentoItensSap = carregarItensSap();
+  carregamentoItensSap.catch(() => {});
+
   container.innerHTML = `
     <div class="header" style="justify-content: space-between; gap: 8px;">
       <button id="btn-back" style="color: white; padding: 8px; border:none; background:transparent;">${BACK_SVG}</button>
@@ -344,10 +357,13 @@ function bindForm(locaisComSetup) {
     const meuId = buscaItemId;
     const { comprimento, largura } = medidasResolvidas();
     const descricao = `${opSelecionada.especie} · ${regraSelecionada.classe || 'sem classe'} · ${regraSelecionada.opcao} · ${fmtMedida(comprimento)} × ${fmtMedida(largura)} m · ${fmtBitola(opSelecionada.bitola)} mm`;
-    mostrarMsgItem('Buscando item no SAP...', false);
+    mostrarMsgItem('Buscando item...', false);
 
     try {
-      const r = await buscarItemSap({
+      const itens = await carregamentoItensSap; // já carregado ao entrar na tela (só espera se ainda estiver carregando)
+      if (meuId !== buscaItemId) return; // o usuário já mudou a Opção/Local
+
+      const r = acharItemSap(itens, {
         especie: opSelecionada.especie,
         classe: regraSelecionada.classe,
         opcao: regraSelecionada.opcao,
@@ -355,7 +371,6 @@ function bindForm(locaisComSetup) {
         largura,
         bitolaMm: Number(opSelecionada.bitola)
       });
-      if (meuId !== buscaItemId) return; // o usuário já mudou a Opção/Local
 
       if (r.item) {
         itemSelecionado = r.item;
@@ -370,9 +385,9 @@ function bindForm(locaisComSetup) {
         mostrarMsgItem(`Item não encontrado no SAP para: ${descricao}. Apontamento bloqueado.`, true);
       }
     } catch (err) {
-      console.error('Erro ao buscar item no SAP:', err);
+      console.error('Erro ao carregar itens do SAP:', err);
       if (meuId !== buscaItemId) return;
-      mostrarMsgItem('Falha ao consultar o SAP. Verifique a conexão e escolha a Opção novamente. Apontamento bloqueado.', true);
+      mostrarMsgItem('Falha ao carregar os itens do SAP. Atualize o app rolando a tela para baixo e tente de novo. Apontamento bloqueado.', true);
     }
   };
 
