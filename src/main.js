@@ -3,6 +3,8 @@ import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from './supabase.js';
 import { renderRomaneioSaida } from './romaneio-saida.js';
 import { renderSetupSecadores, renderSetupSecadorForm } from './setup-secadores.js';
 import { renderProducaoSecagem } from './producao-secagem.js';
+import { renderSetupSerra } from './setup-serra.js';
+import { renderProducaoSerra } from './producao-serra.js';
 
 // Força o recarregamento automático da página quando houver uma nova versão do app (PWA)
 if ('serviceWorker' in navigator) {
@@ -348,6 +350,10 @@ async function route() {
     renderSetupSecadorForm(app, decodeURIComponent(path.split('/')[2]));
   } else if (path === '/producao-secagem') {
     renderProducaoSecagem(app);
+  } else if (path === '/setup-serra') {
+    renderSetupSerra(app);
+  } else if (path === '/producao-serra') {
+    renderProducaoSerra(app);
   } else {
     app.innerHTML = '<div class="container text-center mt-4">Página não encontrada. <br><br><button class="btn btn-primary" onclick="window.location.hash=\'/\'">Voltar</button></div>';
   }
@@ -475,8 +481,12 @@ async function renderHome(container) {
         iconSvg = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 17h4V5H2v12h3"></path><path d="M20 17h2v-9h-4V5H14v12h3"></path><path d="M14 17c0 1.66-1.34 3-3 3s-3-1.34-3-3s1.34-3 3-3s3 1.34 3 3z"></path></svg>';
       } else if (mod.slug === 'app_setup_secadores') {
         iconSvg = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"></line><line x1="4" y1="10" x2="4" y2="3"></line><line x1="12" y1="21" x2="12" y2="12"></line><line x1="12" y1="8" x2="12" y2="3"></line><line x1="20" y1="21" x2="20" y2="16"></line><line x1="20" y1="12" x2="20" y2="3"></line><line x1="1" y1="14" x2="7" y2="14"></line><line x1="9" y1="8" x2="15" y2="8"></line><line x1="17" y1="16" x2="23" y2="16"></line></svg>';
+      } else if (mod.slug === 'app_setup_serra') {
+        iconSvg = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"></line><line x1="4" y1="10" x2="4" y2="3"></line><line x1="12" y1="21" x2="12" y2="12"></line><line x1="12" y1="8" x2="12" y2="3"></line><line x1="20" y1="21" x2="20" y2="16"></line><line x1="20" y1="12" x2="20" y2="3"></line><line x1="1" y1="14" x2="7" y2="14"></line><line x1="9" y1="8" x2="15" y2="8"></line><line x1="17" y1="16" x2="23" y2="16"></line></svg>';
+      } else if (mod.slug === 'app_serra') {
+        iconSvg = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><circle cx="12" cy="12" r="3"></circle><line x1="12" y1="3" x2="12" y2="6"></line><line x1="12" y1="18" x2="12" y2="21"></line><line x1="3" y1="12" x2="6" y2="12"></line><line x1="18" y1="12" x2="21" y2="12"></line></svg>';
       } else if (mod.slug === 'app_secagem') {
-        iconSvg = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v6"></path><path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.5-2.5-5.5S13 5 12 2c-1 3-2.5 5-4.5 7.5S5 13 5 15a7 7 0 0 0 7 7z"></path></svg>';
+        iconSvg ='<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v6"></path><path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.5-2.5-5.5S13 5 12 2c-1 3-2.5 5-4.5 7.5S5 13 5 15a7 7 0 0 0 7 7z"></path></svg>';
       }
 
       card.innerHTML = `
@@ -493,6 +503,10 @@ async function renderHome(container) {
           window.location.hash = '/setup-secadores';
         } else if (mod.slug === 'app_secagem') {
           window.location.hash = '/producao-secagem';
+        } else if (mod.slug === 'app_setup_serra') {
+          window.location.hash = '/setup-serra';
+        } else if (mod.slug === 'app_serra') {
+          window.location.hash = '/producao-serra';
         } else {
           alert('Módulo ' + mod.name + ' em desenvolvimento.');
         }

@@ -1,61 +1,78 @@
-import { currentBPLID, renderBranchSelector, bindBranchSelector, withTimeout, rawRpc, podeAgir, getCurrentUserId } from './main.js';
-import { fetchSecadoresEAtivos } from './setup-secadores.js';
+import { supabase } from './supabase.js';
+import { withTimeout, rawRpc, podeAgir, getCurrentUserId } from './main.js';
+import { headerHtml, bindHeader, renderErro, SPINNER } from './setup-secadores.js';
+import { fetchSerraEAtiva } from './setup-serra.js';
 import { ENDERECOS, fmtBitola, fmtMedida, esc, calcularTotal, carregarItensSap, acharItemSap, rawInsert, fetchRegrasCubagem } from './lamina-seca.js';
 
-const SLUG = 'app_secagem';
+const SLUG = 'app_serra';
+const SERRA = 'SERRA'; // nome usado nas tabelas de medidas/regras (compartilhadas com a Secagem)
+const LOCAIS_ESTOQUE = ['CONSUMIR', 'MERCADO INTERNO'];
 
-const LOCAIS_ESTOQUE = ['CONSUMIR', 'RESSECAR', 'SERRAR'];
-
-const BACK_SVG = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>';
-const SPINNER = '<div style="width: 32px; height: 32px; margin: 0 auto; border: 3px solid var(--color-border); border-top-color: var(--green-400); border-radius: 50%; animation: spin 1s linear infinite;"></div>';
+// Igual à Produção Secagem (tela de totem), com duas diferenças: comprimento e largura NÃO vêm do setup,
+// são escolhidos aqui numa lista de medidas cadastrada no portal (Configurações > PCP > Serra), e as Opções
+// dependem dessa medida; e o Local Estoque tem outras opções.
 
 // Cache das lâminas secas do SAP (grupo 145): carregado ao entrar na tela e mantido em memória.
 // Para atualizar, o usuário recarrega o app rolando a tela para baixo (mesmo jeito do compensado).
 let carregamentoItensSap = null;
 
-export async function renderProducaoSecagem(container) {
+// Medidas ativas da Serra (comprimento x largura). Chamar depois de fetchSerraEAtiva, nunca junto: o
+// supabase-js trava com várias chamadas simultâneas (Web Lock).
+async function fetchMedidasSerra() {
+  const { data, error } = await withTimeout(
+    supabase.from('pcp_secagem_setup_medidas')
+      .select('comprimento, largura')
+      .eq('secador', SERRA)
+      .eq('ativo', true),
+    10000
+  );
+  if (error) throw error;
+  return (data || [])
+    .map(m => ({ comprimento: Number(m.comprimento), largura: Number(m.largura) }))
+    .sort((a, b) => b.comprimento - a.comprimento || b.largura - a.largura);
+}
+
+const mensagemCard = (texto) => `<div style="background: white; padding: 24px; border-radius: 12px; text-align: center; color: var(--color-text-sec);">${texto}</div>`;
+
+export async function renderProducaoSerra(container) {
   // Carrega os itens do SAP em segundo plano assim que a tela abre; o .catch evita aviso de rejeição
   // não tratada (quem usa o resultado trata o erro no seu próprio try/catch).
   carregamentoItensSap = carregarItensSap();
   carregamentoItensSap.catch(() => {});
 
   container.innerHTML = `
-    <div class="header" style="justify-content: space-between; gap: 8px;">
-      <button id="btn-back" style="color: white; padding: 8px; border:none; background:transparent;">${BACK_SVG}</button>
-      <div class="header-title" style="flex: 1;">Produção Secagem</div>
-      ${renderBranchSelector()}
-    </div>
-    <div class="container mt-4" id="ps-content">
+    ${headerHtml('Produção Serra', '/')}
+    <div class="container mt-4" id="pr-content">
       <div class="text-center" style="padding: 40px;">${SPINNER}</div>
     </div>
   `;
-
-  bindBranchSelector();
-  document.getElementById('btn-back').addEventListener('click', () => { window.location.hash = '/'; });
+  bindHeader();
 
   let dados;
+  let medidas;
   try {
-    dados = await fetchSecadoresEAtivos();
+    dados = await fetchSerraEAtiva();
+    medidas = await fetchMedidasSerra();
   } catch (err) {
-    console.error('Erro ao carregar secadores:', err);
-    document.getElementById('ps-content').innerHTML = `
-      <div style="background: white; padding: 24px; border-radius: 12px; text-align: center;">
-        <div class="error-text mb-4">Erro ao carregar os secadores. Verifique a conexão.</div>
-        <button class="btn btn-primary" id="ps-retry">Tentar novamente</button>
-      </div>
-    `;
-    document.getElementById('ps-retry').addEventListener('click', () => renderProducaoSecagem(container));
+    console.error('Erro ao carregar a serra:', err);
+    const content = document.getElementById('pr-content');
+    if (content) renderErro(content, 'Erro ao carregar a serra. Verifique a conexão.');
     return;
   }
 
-  const content = document.getElementById('ps-content');
-  const locaisComSetup = dados.secadores.map(nome => ({
-    nome,
-    op: dados.ativos.find(op => op.secador === nome) || null
-  }));
+  const content = document.getElementById('pr-content');
+  if (!content) return;
 
-  if (locaisComSetup.length === 0) {
-    content.innerHTML = `<div style="background: white; padding: 24px; border-radius: 12px; text-align: center; color: var(--color-text-sec);">Nenhum secador cadastrado nesta filial.</div>`;
+  if (!dados.temSerra) {
+    content.innerHTML = mensagemCard('Nenhuma serra cadastrada nesta filial.');
+    return;
+  }
+  if (!dados.ativa) {
+    content.innerHTML = mensagemCard('A serra está sem setup ativo. Defina o setup em <strong>Setup Serra</strong> antes de apontar.');
+    return;
+  }
+  if (medidas.length === 0) {
+    content.innerHTML = mensagemCard('Nenhuma medida cadastrada para a serra. Peça ao PCP para cadastrar em Configurações &gt; PCP &gt; Serra.');
     return;
   }
 
@@ -65,59 +82,59 @@ export async function renderProducaoSecagem(container) {
   content.innerHTML = `
     <div style="background: white; padding: 24px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
       ${!podeApontar ? '<div class="text-center error-text mb-4">Somente visualização: seu acesso não permite registrar apontamentos.</div>' : ''}
-      <form id="ps-form" autocomplete="off">
+      <form id="pr-form" autocomplete="off">
         <div class="grid-2">
           <div class="form-group">
             <label class="form-label">Data Produção <span class="required">*</span></label>
-            <input type="date" id="ps-data-producao" class="form-input" value="${today}" required>
+            <input type="date" id="pr-data-producao" class="form-input" value="${today}" required>
           </div>
           <div class="form-group">
-            <label class="form-label">Local <span class="required">*</span></label>
-            <select id="ps-local" class="form-input" style="appearance: auto; height: 48px; background-color: var(--dark-300);" required>
+            <label class="form-label">Medida (Comp. × Larg.) <span class="required">*</span></label>
+            <select id="pr-medida" class="form-input" style="appearance: auto; height: 48px; background-color: var(--dark-300);" required>
               <option value="" disabled selected>Selecione...</option>
-              ${locaisComSetup.map(l => `<option value="${l.nome}" ${!l.op ? 'disabled' : ''}>${l.nome}${!l.op ? ' (sem setup ativo)' : ''}</option>`).join('')}
+              ${medidas.map(m => `<option value="${m.comprimento}|${m.largura}">${fmtMedida(m.comprimento)} × ${fmtMedida(m.largura)}</option>`).join('')}
             </select>
           </div>
         </div>
 
         <div class="form-group">
           <label class="form-label">Opção <span class="required">*</span></label>
-          <select id="ps-opcao" class="form-input" style="appearance: auto; height: 48px;" disabled required>
-            <option value="" selected>Selecione o Local</option>
+          <select id="pr-opcao" class="form-input" style="appearance: auto; height: 48px;" disabled required>
+            <option value="" selected>Selecione a Medida</option>
           </select>
         </div>
 
         <div class="form-group">
           <label class="form-label">Produto encontrado</label>
-          <div id="ps-produto" style="min-height: 64px; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--color-border); background: var(--dark-300); display: flex; flex-direction: column; justify-content: center;"></div>
+          <div id="pr-produto" style="min-height: 64px; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--color-border); background: var(--dark-300); display: flex; flex-direction: column; justify-content: center;"></div>
         </div>
 
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0 16px;">
           <div class="form-group">
-            <label class="form-label" id="ps-quantidade-label">Altura/Peças <span class="required">*</span></label>
-            <input type="number" id="ps-altura-pecas" class="form-input" step="any" min="0" required>
+            <label class="form-label" id="pr-quantidade-label">Altura/Peças <span class="required">*</span></label>
+            <input type="number" id="pr-altura-pecas" class="form-input" step="any" min="0" required>
           </div>
           <div class="form-group">
             <label class="form-label">Desconto (%)</label>
-            <input type="number" id="ps-desconto" class="form-input" step="1" min="0" max="100" value="0">
+            <input type="number" id="pr-desconto" class="form-input" step="1" min="0" max="100" value="0">
           </div>
           <div class="form-group">
             <label class="form-label">Total (m³)</label>
-            <input type="text" id="ps-total" class="form-input input-readonly" readonly placeholder="-">
+            <input type="text" id="pr-total" class="form-input input-readonly" readonly placeholder="-">
           </div>
         </div>
 
         <div class="grid-2">
           <div class="form-group">
             <label class="form-label">Local Estoque <span class="required">*</span></label>
-            <select id="ps-local-estoque" class="form-input" style="appearance: auto; height: 48px; background-color: var(--dark-300);" required>
+            <select id="pr-local-estoque" class="form-input" style="appearance: auto; height: 48px; background-color: var(--dark-300);" required>
               <option value="" disabled selected>Selecione...</option>
               ${LOCAIS_ESTOQUE.map(o => `<option value="${o}">${o}</option>`).join('')}
             </select>
           </div>
           <div class="form-group">
             <label class="form-label">Endereço <span class="required">*</span></label>
-            <select id="ps-endereco" class="form-input" style="appearance: auto; height: 48px; background-color: var(--dark-300);" required>
+            <select id="pr-endereco" class="form-input" style="appearance: auto; height: 48px; background-color: var(--dark-300);" required>
               <option value="" disabled selected>Selecione...</option>
               ${ENDERECOS.map(o => `<option value="${o}">${o}</option>`).join('')}
             </select>
@@ -152,28 +169,28 @@ export async function renderProducaoSecagem(container) {
     return;
   }
 
-  bindForm(locaisComSetup);
+  bindForm(dados.ativa);
 }
 
-function bindForm(locaisComSetup) {
-  const localSelect = document.getElementById('ps-local');
-  const opcaoSelect = document.getElementById('ps-opcao');
-  const produtoBox = document.getElementById('ps-produto');
-  const quantidadeLabel = document.getElementById('ps-quantidade-label');
-  const quantidadeInput = document.getElementById('ps-altura-pecas');
-  const descontoInput = document.getElementById('ps-desconto');
-  const totalInput = document.getElementById('ps-total');
+function bindForm(op) {
+  const medidaSelect = document.getElementById('pr-medida');
+  const opcaoSelect = document.getElementById('pr-opcao');
+  const produtoBox = document.getElementById('pr-produto');
+  const quantidadeLabel = document.getElementById('pr-quantidade-label');
+  const quantidadeInput = document.getElementById('pr-altura-pecas');
+  const descontoInput = document.getElementById('pr-desconto');
+  const totalInput = document.getElementById('pr-total');
 
-  let opSelecionada = null;
+  let medidaSelecionada = null; // { comprimento, largura } escolhida no apontamento
   let regrasDisponiveis = [];
   let regraSelecionada = null;
   let itemSelecionado = null;
   let buscaItemId = 0;
 
-  // Medidas usadas no item e no cálculo: override da regra (ex.: 1,300 fixo) ou as do setup.
+  // Medidas usadas no item e no cálculo: override da regra (ex.: 1,300 fixo) ou as escolhidas no apontamento.
   const medidasResolvidas = () => ({
-    comprimento: Number(regraSelecionada.comprimento_override ?? opSelecionada.comprimento),
-    largura: Number(regraSelecionada.largura_override ?? opSelecionada.largura)
+    comprimento: Number(regraSelecionada.comprimento_override ?? medidaSelecionada.comprimento),
+    largura: Number(regraSelecionada.largura_override ?? medidaSelecionada.largura)
   });
 
   // Cartão único do produto: mostra o item achado, um aviso (busca em andamento) ou o erro (bloqueia o apontamento).
@@ -194,7 +211,6 @@ function bindForm(locaisComSetup) {
       produtoBox.innerHTML = `<div style="color: var(--color-text-sec); font-size: 0.95rem;">${esc(texto || 'Selecione a Opção para ver o produto.')}</div>`;
     }
   };
-  const mostrarMsgItem = (texto, erro) => mostrarProduto({ texto, erro });
 
   const limparItem = () => {
     buscaItemId++;
@@ -212,7 +228,7 @@ function bindForm(locaisComSetup) {
   /** Recalcula o Total na tela; devolve o valor (ou null se faltar dado). */
   const atualizarTotal = () => {
     const quantidade = parseFloat(quantidadeInput.value);
-    if (!opSelecionada || !regraSelecionada || !(quantidade > 0)) {
+    if (!medidaSelecionada || !regraSelecionada || !(quantidade > 0)) {
       totalInput.value = '';
       return null;
     }
@@ -221,7 +237,7 @@ function bindForm(locaisComSetup) {
       modoCubagem: regraSelecionada.modo_cubagem,
       comprimento,
       largura,
-      bitolaMm: Number(opSelecionada.bitola),
+      bitolaMm: Number(op.bitola),
       quantidade,
       desconto: Math.min(100, Math.max(0, parseInt(descontoInput.value) || 0))
     });
@@ -231,40 +247,40 @@ function bindForm(locaisComSetup) {
 
   const atualizarItem = async () => {
     limparItem();
-    if (!opSelecionada || !regraSelecionada) return;
+    if (!medidaSelecionada || !regraSelecionada) return;
 
     const meuId = buscaItemId;
     const { comprimento, largura } = medidasResolvidas();
-    const descricao = `${opSelecionada.especie} · ${regraSelecionada.classe || 'sem classe'} · ${regraSelecionada.opcao} · ${fmtMedida(comprimento)} × ${fmtMedida(largura)} m · ${fmtBitola(opSelecionada.bitola)} mm`;
-    mostrarMsgItem('Buscando item...', false);
+    const descricao = `${op.especie} · ${regraSelecionada.classe || 'sem classe'} · ${regraSelecionada.opcao} · ${fmtMedida(comprimento)} × ${fmtMedida(largura)} m · ${fmtBitola(op.bitola)} mm`;
+    mostrarProduto({ texto: 'Buscando item...' });
 
     try {
       const itens = await carregamentoItensSap; // já carregado ao entrar na tela (só espera se ainda estiver carregando)
-      if (meuId !== buscaItemId) return; // o usuário já mudou a Opção/Local
+      if (meuId !== buscaItemId) return; // o usuário já mudou a Medida/Opção
 
       const r = acharItemSap(itens, {
-        especie: opSelecionada.especie,
+        especie: op.especie,
         classe: regraSelecionada.classe,
         opcao: regraSelecionada.opcao,
         comprimento,
         largura,
-        bitolaMm: Number(opSelecionada.bitola)
+        bitolaMm: Number(op.bitola)
       });
 
       if (r.item) {
         itemSelecionado = r.item;
         mostrarProduto({ item: r.item });
       } else if (r.erro === 'CLASSE_INDEFINIDA') {
-        mostrarMsgItem('Esta Opção está sem Classe definida. Peça ao PCP para preencher em Configurações. Apontamento bloqueado.', true);
+        mostrarProduto({ texto: 'Esta Opção está sem Classe definida. Peça ao PCP para preencher em Configurações. Apontamento bloqueado.', erro: true });
       } else if (r.erro === 'MAIS_DE_UM') {
-        mostrarMsgItem(`Mais de um item encontrado no SAP para: ${descricao}. Avise o PCP. Apontamento bloqueado.`, true);
+        mostrarProduto({ texto: `Mais de um item encontrado no SAP para: ${descricao}. Avise o PCP. Apontamento bloqueado.`, erro: true });
       } else {
-        mostrarMsgItem(`Item não encontrado no SAP para: ${descricao}. Apontamento bloqueado.`, true);
+        mostrarProduto({ texto: `Item não encontrado no SAP para: ${descricao}. Apontamento bloqueado.`, erro: true });
       }
     } catch (err) {
       console.error('Erro ao carregar itens do SAP:', err);
       if (meuId !== buscaItemId) return;
-      mostrarMsgItem('Falha ao carregar os itens do SAP. Atualize o app rolando a tela para baixo e tente de novo. Apontamento bloqueado.', true);
+      mostrarProduto({ texto: 'Falha ao carregar os itens do SAP. Atualize o app rolando a tela para baixo e tente de novo. Apontamento bloqueado.', erro: true });
     }
   };
 
@@ -278,31 +294,33 @@ function bindForm(locaisComSetup) {
     atualizarTotal();
   };
 
-  localSelect.addEventListener('change', async () => {
-    const local = locaisComSetup.find(l => l.nome === localSelect.value);
-    opSelecionada = local?.op || null;
+  medidaSelect.addEventListener('change', async () => {
+    const [comprimento, largura] = medidaSelect.value.split('|').map(Number);
+    medidaSelecionada = medidaSelect.value ? { comprimento, largura } : null;
 
-    if (!opSelecionada) {
-      limparOpcao('Selecione o Local');
+    if (!medidaSelecionada) {
+      limparOpcao('Selecione a Medida');
       return;
     }
 
     limparOpcao('Carregando...');
+    const medidaDaBusca = medidaSelecionada;
     try {
-      regrasDisponiveis = await fetchRegrasCubagem(opSelecionada.secador, opSelecionada.comprimento, opSelecionada.largura);
+      regrasDisponiveis = await fetchRegrasCubagem(SERRA, comprimento, largura);
     } catch (err) {
       console.error('Erro ao carregar regras de cubagem:', err);
       regrasDisponiveis = [];
     }
+    if (medidaSelecionada !== medidaDaBusca) return; // o usuário já trocou a Medida
 
     if (regrasDisponiveis.length === 0) {
-      limparOpcao('Configuração pendente para este setup');
+      limparOpcao('Configuração pendente para esta medida');
       return;
     }
 
     opcaoSelect.disabled = false;
     opcaoSelect.innerHTML = `<option value="" disabled selected>Selecione...</option>` +
-      regrasDisponiveis.map(r => `<option value="${r.opcao}">${r.opcao}</option>`).join('');
+      regrasDisponiveis.map(r => `<option value="${esc(r.opcao)}">${esc(r.opcao)}</option>`).join('');
   });
 
   opcaoSelect.addEventListener('change', () => {
@@ -373,14 +391,14 @@ function bindForm(locaisComSetup) {
     }
   });
 
-  document.getElementById('ps-form').addEventListener('submit', async (e) => {
+  document.getElementById('pr-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     formError.textContent = '';
     formSuccess.textContent = '';
     if (!podeAgir(SLUG)) return;
 
-    if (!opSelecionada) {
-      formError.textContent = 'Selecione um Local com setup ativo.';
+    if (!medidaSelecionada) {
+      formError.textContent = 'Selecione a Medida.';
       return;
     }
     if (!regraSelecionada) {
@@ -409,30 +427,30 @@ function bindForm(locaisComSetup) {
     btnSave.innerHTML = 'Salvando...';
 
     try {
+      const { comprimento, largura } = medidasResolvidas();
       const payload = {
-        data_producao: document.getElementById('ps-data-producao').value,
-        local: opSelecionada.secador,
-        turno: opSelecionada.turno,
-        modo: opSelecionada.tipo,
-        especie: opSelecionada.especie,
-        bitola: opSelecionada.bitola,
+        data_producao: document.getElementById('pr-data-producao').value,
+        turno: op.turno,
+        modo: op.tipo,
+        especie: op.especie,
+        bitola: op.bitola,
         cod_item: itemSelecionado.codigo,
         item: itemSelecionado.nome,
-        comprimento: medidasResolvidas().comprimento,
-        largura: medidasResolvidas().largura,
+        comprimento,
+        largura,
         modo_cubagem: regraSelecionada.modo_cubagem,
         altura_pecas: quantidade,
         desconto: Math.min(100, Math.max(0, parseInt(descontoInput.value) || 0)),
         total: atualizarTotal(),
-        local_estoque: document.getElementById('ps-local-estoque').value,
-        endereco: document.getElementById('ps-endereco').value,
+        local_estoque: document.getElementById('pr-local-estoque').value,
+        endereco: document.getElementById('pr-endereco').value,
         responsavel_id: respIdInput.value,
         responsavel_nome: respInput.value,
         tablet_user_id: getCurrentUserId(),
-        op_id: opSelecionada.id
+        op_id: op.id
       };
 
-      const { data: insertData, error: insertError } = await withTimeout(rawInsert('secagem_apontamentos', payload), 15000);
+      const { data: insertData, error: insertError } = await withTimeout(rawInsert('serra_apontamentos', payload), 15000);
       if (insertError) throw new Error(insertError.message || JSON.stringify(insertError));
       if (!insertData) throw new Error('Insert não retornou dados.');
 
@@ -448,7 +466,7 @@ function bindForm(locaisComSetup) {
 
       setTimeout(() => { formSuccess.textContent = ''; }, 3000);
     } catch (err) {
-      console.error('[PRODUCAO SECAGEM ERROR]', err);
+      console.error('[PRODUCAO SERRA ERROR]', err);
       formError.textContent = 'Erro ao salvar: ' + err.message;
     } finally {
       btnSave.disabled = true; // Desabilitado porque o PIN foi limpo
