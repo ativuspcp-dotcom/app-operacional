@@ -5,7 +5,7 @@ const SLUG = 'app_setup_secadores';
 
 const TIPOS = ['PRODUÇÃO', 'RESSEQUE'];
 const ESPECIES = ['PINUS', 'EUCALIPTO'];
-const BITOLAS = [1.5, 1.8, 2.0, 2.2, 2.5, 2.7, 3.1, 3.3];
+const BITOLAS = [1.5, 1.8, 2.2, 2.5, 2.7, 3.1, 3.3];
 const TURNOS = ['00:00 - 06:00', '06:00 - 12:00', '12:00 - 18:00', '18:00 - 00:00'];
 
 // Tipo/Espécie/Bitola/Turno também existem na função do banco salvar_setup_secador (a que valida de

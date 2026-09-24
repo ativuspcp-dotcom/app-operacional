@@ -11,6 +11,54 @@ const BACK_SVG = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" st
 const SPINNER = '<div style="width: 32px; height: 32px; margin: 0 auto; border: 3px solid var(--color-border); border-top-color: var(--green-400); border-radius: 50%; animation: spin 1s linear infinite;"></div>';
 
 const fmtBitola = (v) => Number(v).toFixed(1).replace('.', ',');
+const fmtMedida = (v) => Number(v).toFixed(3).replace('.', ',');
+
+// Códigos de U_Class / U_Quality no SAP (mesmos da tela Lâminas Secas do portal).
+const CLASSES_SAP = { CAPA: '601', ENCHIMENTO: '602', MIOLO: '603' };
+const QUALIDADES_SAP = { A: '601', B: '602', C: '603', CP: '604', D: '605', L: '606', G: '607', CASCA: '608' };
+
+/**
+ * Total em m³. PEÇAS: comprimento x largura x bitola (mm -> m) x peças. ALTURA: comprimento x largura x altura.
+ * Nos dois casos aplica o desconto em % (0 = sem desconto).
+ */
+function calcularTotal({ modoCubagem, comprimento, largura, bitolaMm, quantidade, desconto }) {
+  const base = modoCubagem === 'PEÇAS'
+    ? comprimento * largura * (bitolaMm / 1000) * quantidade
+    : comprimento * largura * quantidade;
+  return Number((base * (1 - desconto / 100)).toFixed(4));
+}
+
+/**
+ * Acha a lâmina seca no SAP (grupo 145). A espécie só existe no nome do item, por isso o filtro por texto;
+ * a bitola vem do SAP em metros (0,0015 = 1,5 mm). Medidas comparadas com tolerância (números decimais).
+ * Devolve { item } ou { erro: 'NAO_ENCONTRADO' | 'MAIS_DE_UM' | 'CLASSE_INDEFINIDA' }; lança se o SAP não responder.
+ */
+async function buscarItemSap({ especie, classe, opcao, comprimento, largura, bitolaMm }) {
+  const uClass = CLASSES_SAP[classe];
+  const uQuality = QUALIDADES_SAP[opcao];
+  if (!uClass) return { erro: 'CLASSE_INDEFINIDA' };
+  if (!uQuality) return { erro: 'NAO_ENCONTRADO' };
+
+  const filtro = `ItemsGroupCode eq 145 and Properties1 eq 'tYES' and U_Class eq '${uClass}' and U_Quality eq '${uQuality}' and contains(ItemName,'${especie}')`;
+  const url = encodeURI(`/api/Items?$select=ItemCode,ItemName,SalesFactor1,SalesFactor2,SalesFactor3&$filter=${filtro}`);
+  const res = await withTimeout(fetch(url, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true', 'Prefer': 'odata.maxpagesize=0' }
+  }), 15000);
+  if (!res.ok) throw new Error(`SAP respondeu ${res.status}`);
+
+  const itens = (await res.json()).value || [];
+  const bate = (valor, esperado, tolerancia) => Math.abs(Number(valor) - esperado) < tolerancia;
+  const achados = itens.filter(i =>
+    bate(i.SalesFactor1, comprimento, 0.0005) &&
+    bate(i.SalesFactor2, largura, 0.0005) &&
+    bate(Number(i.SalesFactor3) * 1000, bitolaMm, 0.005)
+  );
+
+  if (achados.length === 0) return { erro: 'NAO_ENCONTRADO' };
+  if (achados.length > 1) return { erro: 'MAIS_DE_UM' };
+  return { item: { codigo: achados[0].ItemCode, nome: achados[0].ItemName } };
+}
 
 /**
  * rawInsert: fetch nativo direto para a API REST do Supabase, bypassing o Web Lock interno
@@ -131,24 +179,35 @@ export async function renderProducaoSecagem(container) {
         </div>
 
         <div class="form-group">
+          <label class="form-label">Cód. Item</label>
+          <input type="text" id="ps-cod-item" class="form-input input-readonly" readonly placeholder="-">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Item</label>
+          <input type="text" id="ps-item" class="form-input input-readonly" readonly placeholder="-">
+          <div id="ps-item-msg" style="font-size: 0.85rem; margin-top: 6px; min-height: 18px;"></div>
+        </div>
+
+        <div class="form-group">
           <label class="form-label">Modo Cubagem</label>
           <input type="text" id="ps-modo-cubagem" class="form-input input-readonly" readonly placeholder="-">
         </div>
 
         <div class="grid-2">
           <div class="form-group">
-            <label class="form-label">Altura/Peças <span class="required">*</span></label>
+            <label class="form-label" id="ps-quantidade-label">Altura/Peças <span class="required">*</span></label>
             <input type="number" id="ps-altura-pecas" class="form-input" step="any" min="0" required>
           </div>
           <div class="form-group">
-            <label class="form-label">Desconto</label>
-            <input type="number" id="ps-desconto" class="form-input" step="1" min="0" value="0">
+            <label class="form-label">Desconto (%)</label>
+            <input type="number" id="ps-desconto" class="form-input" step="1" min="0" max="100" value="0">
           </div>
         </div>
 
         <div class="form-group">
-          <label class="form-label">Total</label>
-          <input type="text" id="ps-total" class="form-input input-readonly" readonly placeholder="Fórmula pendente">
+          <label class="form-label">Total (m³)</label>
+          <input type="text" id="ps-total" class="form-input input-readonly" readonly placeholder="-">
         </div>
 
         <div class="grid-2">
@@ -202,7 +261,7 @@ export async function renderProducaoSecagem(container) {
 async function fetchRegrasCubagem(secador, comprimento, largura) {
   const { data, error } = await supabase
     .from('pcp_secagem_regras_cubagem')
-    .select('opcao, modo_cubagem, comprimento_override, largura_override, desconto')
+    .select('opcao, classe, modo_cubagem, comprimento_override, largura_override, desconto')
     .eq('secador', secador)
     .eq('comprimento_setup', comprimento)
     .eq('largura_setup', largura)
@@ -219,10 +278,103 @@ function bindForm(locaisComSetup) {
   const bitolaInput = document.getElementById('ps-bitola');
   const opcaoSelect = document.getElementById('ps-opcao');
   const modoCubagemInput = document.getElementById('ps-modo-cubagem');
+  const codItemInput = document.getElementById('ps-cod-item');
+  const itemInput = document.getElementById('ps-item');
+  const itemMsg = document.getElementById('ps-item-msg');
+  const quantidadeLabel = document.getElementById('ps-quantidade-label');
+  const quantidadeInput = document.getElementById('ps-altura-pecas');
+  const descontoInput = document.getElementById('ps-desconto');
+  const totalInput = document.getElementById('ps-total');
 
   let opSelecionada = null;
   let regrasDisponiveis = [];
   let regraSelecionada = null;
+  let itemSelecionado = null;
+  let buscaItemId = 0;
+
+  // Medidas usadas no item e no cálculo: override da regra (ex.: 1,300 fixo) ou as do setup.
+  const medidasResolvidas = () => ({
+    comprimento: Number(regraSelecionada.comprimento_override ?? opSelecionada.comprimento),
+    largura: Number(regraSelecionada.largura_override ?? opSelecionada.largura)
+  });
+
+  const mostrarMsgItem = (texto, erro) => {
+    itemMsg.textContent = texto;
+    itemMsg.style.color = erro ? 'var(--color-error, #ef4444)' : 'var(--color-text-sec)';
+  };
+
+  const limparItem = () => {
+    buscaItemId++;
+    itemSelecionado = null;
+    codItemInput.value = '';
+    itemInput.value = '';
+    mostrarMsgItem('', false);
+  };
+
+  const atualizarRotuloQuantidade = () => {
+    const modo = regraSelecionada?.modo_cubagem;
+    quantidadeLabel.innerHTML = `${modo === 'PEÇAS' ? 'Peças' : modo === 'ALTURA' ? 'Altura (m)' : 'Altura/Peças'} <span class="required">*</span>`;
+    quantidadeInput.step = modo === 'PEÇAS' ? '1' : 'any';
+  };
+
+  /** Recalcula o Total na tela; devolve o valor (ou null se faltar dado). */
+  const atualizarTotal = () => {
+    const quantidade = parseFloat(quantidadeInput.value);
+    if (!opSelecionada || !regraSelecionada || !(quantidade > 0)) {
+      totalInput.value = '';
+      return null;
+    }
+    const { comprimento, largura } = medidasResolvidas();
+    const total = calcularTotal({
+      modoCubagem: regraSelecionada.modo_cubagem,
+      comprimento,
+      largura,
+      bitolaMm: Number(opSelecionada.bitola),
+      quantidade,
+      desconto: Math.min(100, Math.max(0, parseInt(descontoInput.value) || 0))
+    });
+    totalInput.value = total.toFixed(4).replace('.', ',');
+    return total;
+  };
+
+  const atualizarItem = async () => {
+    limparItem();
+    if (!opSelecionada || !regraSelecionada) return;
+
+    const meuId = buscaItemId;
+    const { comprimento, largura } = medidasResolvidas();
+    const descricao = `${opSelecionada.especie} · ${regraSelecionada.classe || 'sem classe'} · ${regraSelecionada.opcao} · ${fmtMedida(comprimento)} × ${fmtMedida(largura)} m · ${fmtBitola(opSelecionada.bitola)} mm`;
+    mostrarMsgItem('Buscando item no SAP...', false);
+
+    try {
+      const r = await buscarItemSap({
+        especie: opSelecionada.especie,
+        classe: regraSelecionada.classe,
+        opcao: regraSelecionada.opcao,
+        comprimento,
+        largura,
+        bitolaMm: Number(opSelecionada.bitola)
+      });
+      if (meuId !== buscaItemId) return; // o usuário já mudou a Opção/Local
+
+      if (r.item) {
+        itemSelecionado = r.item;
+        codItemInput.value = r.item.codigo;
+        itemInput.value = r.item.nome;
+        mostrarMsgItem('', false);
+      } else if (r.erro === 'CLASSE_INDEFINIDA') {
+        mostrarMsgItem('Esta Opção está sem Classe definida. Peça ao PCP para preencher em Configurações. Apontamento bloqueado.', true);
+      } else if (r.erro === 'MAIS_DE_UM') {
+        mostrarMsgItem(`Mais de um item encontrado no SAP para: ${descricao}. Avise o PCP. Apontamento bloqueado.`, true);
+      } else {
+        mostrarMsgItem(`Item não encontrado no SAP para: ${descricao}. Apontamento bloqueado.`, true);
+      }
+    } catch (err) {
+      console.error('Erro ao buscar item no SAP:', err);
+      if (meuId !== buscaItemId) return;
+      mostrarMsgItem('Falha ao consultar o SAP. Verifique a conexão e escolha a Opção novamente. Apontamento bloqueado.', true);
+    }
+  };
 
   const limparOpcao = (placeholder) => {
     regrasDisponiveis = [];
@@ -230,6 +382,9 @@ function bindForm(locaisComSetup) {
     opcaoSelect.innerHTML = `<option value="" selected>${placeholder}</option>`;
     opcaoSelect.disabled = true;
     modoCubagemInput.value = '';
+    limparItem();
+    atualizarRotuloQuantidade();
+    atualizarTotal();
   };
 
   localSelect.addEventListener('change', async () => {
@@ -246,7 +401,7 @@ function bindForm(locaisComSetup) {
       return;
     }
 
-    opcaoSelect.innerHTML = `<option value="" selected>Carregando...</option>`;
+    limparOpcao('Carregando...');
     try {
       regrasDisponiveis = await fetchRegrasCubagem(opSelecionada.secador, opSelecionada.comprimento, opSelecionada.largura);
     } catch (err) {
@@ -268,9 +423,15 @@ function bindForm(locaisComSetup) {
     regraSelecionada = regrasDisponiveis.find(r => r.opcao === opcaoSelect.value) || null;
     modoCubagemInput.value = regraSelecionada?.modo_cubagem || '';
     if (regraSelecionada) {
-      document.getElementById('ps-desconto').value = regraSelecionada.desconto;
+      descontoInput.value = regraSelecionada.desconto;
     }
+    atualizarRotuloQuantidade();
+    atualizarTotal();
+    atualizarItem();
   });
+
+  quantidadeInput.addEventListener('input', atualizarTotal);
+  descontoInput.addEventListener('input', atualizarTotal);
 
   const pinInput = document.getElementById('pin');
   const respInput = document.getElementById('responsavel_nome');
@@ -341,6 +502,19 @@ function bindForm(locaisComSetup) {
       formError.textContent = 'Selecione uma Opção.';
       return;
     }
+    if (!itemSelecionado) {
+      formError.textContent = 'Item não encontrado no SAP para esta Opção: não é possível registrar o apontamento.';
+      return;
+    }
+    const quantidade = parseFloat(quantidadeInput.value);
+    if (!(quantidade > 0)) {
+      formError.textContent = regraSelecionada.modo_cubagem === 'PEÇAS' ? 'Informe a quantidade de peças.' : 'Informe a altura.';
+      return;
+    }
+    if (regraSelecionada.modo_cubagem === 'PEÇAS' && !Number.isInteger(quantidade)) {
+      formError.textContent = 'A quantidade de peças deve ser um número inteiro.';
+      return;
+    }
     if (!respIdInput.value) {
       formError.textContent = 'Digite um PIN válido para prosseguir.';
       return;
@@ -357,11 +531,14 @@ function bindForm(locaisComSetup) {
         modo: opSelecionada.tipo,
         especie: opSelecionada.especie,
         bitola: opSelecionada.bitola,
-        comprimento: regraSelecionada.comprimento_override ?? opSelecionada.comprimento,
-        largura: regraSelecionada.largura_override ?? opSelecionada.largura,
+        cod_item: itemSelecionado.codigo,
+        item: itemSelecionado.nome,
+        comprimento: medidasResolvidas().comprimento,
+        largura: medidasResolvidas().largura,
         modo_cubagem: regraSelecionada.modo_cubagem,
-        altura_pecas: parseFloat(document.getElementById('ps-altura-pecas').value),
-        desconto: parseInt(document.getElementById('ps-desconto').value) || 0,
+        altura_pecas: quantidade,
+        desconto: Math.min(100, Math.max(0, parseInt(descontoInput.value) || 0)),
+        total: atualizarTotal(),
         local_estoque: document.getElementById('ps-local-estoque').value,
         endereco: document.getElementById('ps-endereco').value,
         responsavel_id: respIdInput.value,
