@@ -1,6 +1,6 @@
 import { currentBPLID, renderBranchSelector, bindBranchSelector, withTimeout, rawRpc, podeAgir, getCurrentUserId } from './main.js';
 import { fetchSecadoresEAtivos } from './setup-secadores.js';
-import { ENDERECOS, fmtBitola, fmtMedida, esc, calcularTotal, carregarItensSap, acharItemSap, rawInsert, fetchRegrasCubagem } from './lamina-seca.js';
+import { ENDERECOS, fmtBitola, fmtMedida, esc, calcularTotal, carregarItensSap, acharItemSap, rawInsert, rawDelete, enviarParaImpressora, fetchRegrasCubagem } from './lamina-seca.js';
 
 const SLUG = 'app_secagem';
 
@@ -436,7 +436,31 @@ function bindForm(locaisComSetup) {
       if (insertError) throw new Error(insertError.message || JSON.stringify(insertError));
       if (!insertData) throw new Error('Insert não retornou dados.');
 
-      formSuccess.textContent = `Apontamento ${insertData.qrcode} salvo com sucesso!`;
+      // Etiqueta: POST para a impressora (https://tableros.ngrok.app/secagem). Valores como texto, igual ao da
+      // Amarração; pecas_altura é a quantidade digitada no form (peças ou altura), não a Opção.
+      const etiqueta = {
+        qrcode: insertData.qrcode,
+        turno: payload.turno,
+        local: payload.local,
+        pecas_altura: quantidadeInput.value,
+        desconto: String(payload.desconto),
+        total: Number(payload.total).toFixed(4),
+        modo: payload.modo,
+        local_estoque: payload.local_estoque,
+        item: payload.item
+      };
+      const impressao = await enviarParaImpressora('/api/secagem', etiqueta);
+
+      if (impressao.ok) {
+        formSuccess.textContent = `Apontamento ${insertData.qrcode} salvo! Impressora: ${impressao.texto || 'OK'}`;
+      } else {
+        // Sem etiqueta a lâmina não tem como ser identificada: cancela o apontamento (mesmo comportamento da Amarração)
+        const motivo = impressao.status ? `(${impressao.status})` : '(Rede)';
+        const { error: delError } = await rawDelete('secagem_apontamentos', insertData.id);
+        formError.textContent = delError
+          ? `Impressora falhou ${motivo} e NÃO foi possível cancelar o apontamento ${insertData.qrcode}. Avise o PCP. Detalhe: ${impressao.texto}`
+          : `Impressora falhou ${motivo}. Apontamento cancelado e não salvo no banco. Detalhe: ${impressao.texto}`;
+      }
 
       // Reset só PIN e Responsável: mantém o resto preenchido para o próximo apontamento da mesma remessa
       pinInput.value = '';

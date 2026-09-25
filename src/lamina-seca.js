@@ -72,20 +72,22 @@ export function acharItemSap(itens, { especie, classe, opcao, comprimento, largu
  * rawInsert: fetch nativo direto para a API REST do Supabase, bypassing o Web Lock interno
  * do supabase-js que trava inserts em sequência rápida (mesmo padrão de main.js/romaneio-saida.js).
  */
-export async function rawInsert(table, payload) {
+function tokenAtual() {
   const storageKey = `sb-mqtyjzdwwgeycvmbiqsg-auth-token`;
-  let token = '';
   try {
     const raw = localStorage.getItem(storageKey);
-    if (raw) token = JSON.parse(raw)?.access_token || '';
+    if (raw) return JSON.parse(raw)?.access_token || '';
   } catch (_) {}
+  return '';
+}
 
+export async function rawInsert(table, payload) {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'apikey': SUPABASE_ANON_KEY,
-      'Authorization': `Bearer ${token}`,
+      'Authorization': `Bearer ${tokenAtual()}`,
       'Prefer': 'return=representation'
     },
     body: JSON.stringify(payload)
@@ -94,6 +96,40 @@ export async function rawInsert(table, payload) {
   if (!res.ok) return { data: null, error: json };
   const record = Array.isArray(json) ? json[0] : json;
   return { data: record, error: null };
+}
+
+/** Exclui uma linha pelo id (mesmo fetch nativo do rawInsert). Erro se o banco não excluiu nada (ex.: permissão). */
+export async function rawDelete(table, id) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?id=eq.${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    headers: {
+      'apikey': SUPABASE_ANON_KEY,
+      'Authorization': `Bearer ${tokenAtual()}`,
+      'Prefer': 'return=representation'
+    }
+  });
+  const json = await res.json().catch(() => null);
+  if (!res.ok) return { data: null, error: json || { message: `HTTP ${res.status}` } };
+  if (!json || json.length === 0) return { data: null, error: { message: 'Nenhuma linha excluída (permissão negada ou já removida).' } };
+  return { data: json, error: null };
+}
+
+/**
+ * Envia a etiqueta para a impressora (POST JSON pelo proxy /api → https://tableros.ngrok.app/<caminho>).
+ * Nunca lança: devolve { ok, status, texto } (status 0 = falha de rede/tempo esgotado).
+ */
+export async function enviarParaImpressora(caminho, payload) {
+  try {
+    const res = await withTimeout(fetch(caminho, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
+      body: JSON.stringify(payload)
+    }), 60000);
+    const texto = await res.text();
+    return { ok: res.ok, status: res.status, texto };
+  } catch (err) {
+    return { ok: false, status: 0, texto: err.message };
+  }
 }
 
 /** Busca as regras de cubagem (Opção/Modo Cubagem/overrides/Desconto) para uma combinação de setup. */
