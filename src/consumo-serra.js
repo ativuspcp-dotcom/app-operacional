@@ -2,6 +2,7 @@ import { supabase } from './supabase.js';
 import { currentBPLID, withTimeout, rawRpc, podeAgir } from './main.js';
 import { headerHtml, bindHeader, renderErro, toggleHtml, SPINNER } from './setup-secadores.js';
 import { fmtBitola, fmtMedida, esc } from './lamina-seca.js';
+import { lerQrComCamera } from './camera-scanner.js';
 
 const SLUG = 'app_consumo_serra';
 const MAX_HISTORICO = 8;
@@ -158,7 +159,11 @@ export async function renderConsumoSerra(container) {
         <label class="form-label" style="font-size: 1rem;">Local do consumo <span class="required">*</span></label>
         ${toggleHtml('cs-serra', serras, serraSelecionada, o => o)}
       </div>
-      <label class="form-label" for="cs-qrcode" style="font-size: 1rem;">Bipe a etiqueta (QR Code) da lâmina</label>
+      <button type="button" id="cs-camera" class="btn btn-primary" style="width: 100%; padding: 22px; font-size: 1.2rem; margin-bottom: 14px; display: flex; align-items: center; justify-content: center; gap: 12px;" ${podeConsumir && serraSelecionada ? '' : 'disabled'}>
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+        Ler QR Code com a câmera
+      </button>
+      <label class="form-label" for="cs-qrcode" style="font-size: 0.9rem; color: var(--color-text-sec);">Ou digite o código da etiqueta e aperte Enter</label>
       <input type="text" id="cs-qrcode" class="form-input" placeholder="${serraSelecionada ? 'LS126-1' : 'Escolha a serra acima'}" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" data-lpignore="true" data-1p-ignore data-bwignore style="font-size: 1.6rem; height: 64px; text-align: center; font-family: monospace; letter-spacing: 2px; text-transform: uppercase;" ${podeConsumir && serraSelecionada ? '' : 'disabled'}>
       <div id="cs-resultado"></div>
       <div id="cs-historico">${historicoHtml()}</div>
@@ -174,9 +179,13 @@ export async function renderConsumoSerra(container) {
   const resultado = document.getElementById('cs-resultado');
   const historicoEl = document.getElementById('cs-historico');
   const grupoSerra = document.getElementById('cs-serra');
+  const btnCamera = document.getElementById('cs-camera');
   let processando = false;
 
-  const focar = () => { if (!input.disabled) input.focus(); };
+  // Em aparelho de toque (a leitura é pela câmera) não puxa o teclado na tela sozinho; com mouse/pistola o
+  // campo continua sempre focado, pronto para bipar.
+  const aparelhoDeToque = window.matchMedia?.('(pointer: coarse)').matches;
+  const focar = () => { if (!aparelhoDeToque && !input.disabled) input.focus(); };
   focar();
 
   // Escolha da serra: destaca o botão, libera o campo e já deixa pronto para bipar
@@ -189,6 +198,7 @@ export async function renderConsumoSerra(container) {
     salvarSerra(serraSelecionada);
     resultado.innerHTML = '';
     input.disabled = false;
+    btnCamera.disabled = false;
     input.placeholder = 'LS126-1';
     focar();
   });
@@ -202,12 +212,10 @@ export async function renderConsumoSerra(container) {
     }, 150);
   });
 
-  input.addEventListener('keydown', async (e) => {
-    if (e.key !== 'Enter') return;
-    e.preventDefault();
-
-    const qrcode = input.value.trim();
+  // Registra o consumo do QR informado (digitado, pistola ou lido pela câmera)
+  const processar = async (qrcode) => {
     if (!qrcode || processando) return;
+    input.value = qrcode;
 
     if (!serraSelecionada) {
       resultado.innerHTML = cartaoResultado({ status: 'SERRA_INVALIDA' });
@@ -246,5 +254,17 @@ export async function renderConsumoSerra(container) {
     input.readOnly = false;
     processando = false;
     focar();
+  };
+
+  input.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    processar(input.value.trim());
+  });
+
+  btnCamera.addEventListener('click', async () => {
+    if (!serraSelecionada) return;
+    const qr = await lerQrComCamera({ titulo: 'Leia a etiqueta da lâmina' });
+    if (qr) await processar(qr);
   });
 }

@@ -1,5 +1,6 @@
 import { currentBPLID, renderBranchSelector, bindBranchSelector, withTimeout, rawRpc, podeAgir, getCurrentUserId } from './main.js';
 import { fetchSecadoresEAtivos } from './setup-secadores.js';
+import { lerQrComCamera } from './camera-scanner.js';
 import { ENDERECOS, fmtBitola, fmtMedida, esc, calcularTotal, carregarItensSap, acharItemSap, rawInsert, rawDelete, enviarParaImpressora, fetchRegrasCubagem } from './lamina-seca.js';
 
 const SLUG = 'app_secagem';
@@ -132,6 +133,10 @@ export async function renderProducaoSecagem(container) {
           <div id="ps-etiqueta-manual-box" style="display: none; margin-top: 12px;">
             <label class="form-label" for="ps-qrcode-manual">Bipe a etiqueta pré-impressa (QR Code) <span class="required">*</span></label>
             <input type="text" id="ps-qrcode-manual" class="form-input" placeholder="Bipe a etiqueta" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" data-lpignore="true" data-1p-ignore data-bwignore style="font-size: 1.3rem; height: 56px; text-align: center; font-family: monospace; letter-spacing: 1px; text-transform: uppercase;">
+            <button type="button" id="ps-qrcode-camera" class="btn btn-secondary" style="width: 100%; margin-top: 8px; padding: 14px; font-size: 1rem; display: flex; align-items: center; justify-content: center; gap: 10px;">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+              Ler com a câmera
+            </button>
             <div id="ps-qrcode-manual-msg" style="font-size: 0.85rem; margin-top: 6px; min-height: 18px;"></div>
             <div style="font-size: 0.8rem; color: var(--color-text-sec);">Com etiqueta manual o sistema não gera código automático e não imprime.</div>
           </div>
@@ -442,6 +447,15 @@ function bindForm(locaisComSetup) {
     if (!etiquetaManualEmUso && qrManualInput.value) pinInput.focus();
   });
   qrManualInput.addEventListener('change', verificarEtiquetaManual);
+
+  // Leitura pela câmera do aparelho (o campo também aceita digitar ou pistola)
+  document.getElementById('ps-qrcode-camera').addEventListener('click', async () => {
+    const qr = await lerQrComCamera({ titulo: 'Leia a etiqueta pré-impressa' });
+    if (!qr) return;
+    qrManualInput.value = qr;
+    await verificarEtiquetaManual();
+    if (!etiquetaManualEmUso && qrManualInput.value) pinInput.focus();
+  });
 
   document.getElementById('ps-form').addEventListener('submit', async (e) => {
     e.preventDefault();
