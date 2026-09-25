@@ -24,6 +24,14 @@ export const SPINNER = '<div style="width: 32px; height: 32px; margin: 0 auto; b
 export const CARD_STYLE = 'background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.05);';
 
 const fmtDim = (v) => Number(v).toFixed(3).replace('.', ',');
+
+/** dd/mm/aaaa hh:mm no horário local. */
+export function fmtDataHora(iso) {
+  if (!iso) return '-';
+  const d = new Date(iso);
+  const p = (n) => String(n).padStart(2, '0');
+  return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
 export const fmtBitola = (v) => Number(v).toFixed(1).replace('.', ',');
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -107,7 +115,7 @@ function cardSecador(secador, op) {
           ${linha('Bitola', `${fmtBitola(op.bitola)} mm`)}
           ${linha('Turno', esc(op.turno))}
         </div>
-        ${op.responsavel_nome ? `<div style="margin-top: 14px; font-size: 0.8rem; color: var(--color-text-sec);">Definido por ${esc(op.responsavel_nome)}</div>` : ''}
+        ${op.responsavel_nome ? `<div style="margin-top: 14px; font-size: 0.8rem; color: var(--color-text-sec);">Definido por ${esc(op.responsavel_nome)} · efetivada em ${fmtDataHora(op.created_at)}</div>` : ''}
       ` : '<div style="color: var(--color-text-sec); font-size: 0.9rem;">Toque para definir o setup deste secador.</div>'}
       ${podeAgir(SLUG)
         ? `<div style="margin-top: 16px; text-align: right; color: var(--color-primary); font-weight: 600; font-size: 0.9rem;">${op ? 'Alterar setup ›' : 'Definir setup ›'}</div>`

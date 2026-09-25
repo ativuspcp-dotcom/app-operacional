@@ -1,6 +1,6 @@
 import { supabase } from './supabase.js';
 import { currentBPLID, withTimeout, rawRpc, podeAgir } from './main.js';
-import { headerHtml, bindHeader, renderErro, toggleHtml, selectHtml, ESPECIES, BITOLAS, TURNOS, CARD_STYLE, SPINNER, fmtBitola } from './setup-secadores.js';
+import { headerHtml, bindHeader, renderErro, toggleHtml, selectHtml, ESPECIES, BITOLAS, TURNOS, CARD_STYLE, SPINNER, fmtBitola, fmtDataHora } from './setup-secadores.js';
 import { esc } from './lamina-seca.js';
 
 const SLUG = 'app_setup_serra';
@@ -51,7 +51,7 @@ function cardSerra(serra, op) {
           ${linha('Bitola', `${fmtBitola(op.bitola)} mm`)}
           ${linha('Turno', esc(op.turno))}
         </div>
-        ${op.responsavel_nome ? `<div style="margin-top: 14px; font-size: 0.8rem; color: var(--color-text-sec);">Definido por ${esc(op.responsavel_nome)}</div>` : ''}
+        ${op.responsavel_nome ? `<div style="margin-top: 14px; font-size: 0.8rem; color: var(--color-text-sec);">Definido por ${esc(op.responsavel_nome)} · efetivada em ${fmtDataHora(op.created_at)}</div>` : ''}
       ` : '<div style="color: var(--color-text-sec); font-size: 0.9rem;">Toque para definir o setup desta serra.</div>'}
       ${podeAgir(SLUG)
         ? `<div style="margin-top: 16px; text-align: right; color: var(--color-primary); font-weight: 600; font-size: 0.9rem;">${op ? 'Alterar setup ›' : 'Definir setup ›'}</div>`

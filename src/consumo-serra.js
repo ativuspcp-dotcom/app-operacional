@@ -8,7 +8,7 @@ const MAX_HISTORICO = 8;
 const STORAGE_SERRA = 'consumo_serra_local';
 
 // Consumo da Serra: sem setup e sem PIN. A estação escolhe a serra (SERRA 1 / SERRA 2 = local do consumo) e bipa
-// o QR Code (LS<yy>-<n>) de uma lâmina seca; a função do banco consumir_lamina_seca marca a saída da lâmina e
+// o QR Code (LS<filial><yy>-<n>) de uma lâmina seca; a função do banco consumir_lamina_seca marca a saída da lâmina e
 // registra o consumo naquela serra. Se a etiqueta não existe, é da Serra ou já foi consumida, a tela avisa e
 // nada é gravado.
 
@@ -159,7 +159,7 @@ export async function renderConsumoSerra(container) {
         ${toggleHtml('cs-serra', serras, serraSelecionada, o => o)}
       </div>
       <label class="form-label" for="cs-qrcode" style="font-size: 1rem;">Bipe a etiqueta (QR Code) da lâmina</label>
-      <input type="text" id="cs-qrcode" class="form-input" placeholder="${serraSelecionada ? 'LS26-1' : 'Escolha a serra acima'}" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" data-lpignore="true" data-1p-ignore data-bwignore style="font-size: 1.6rem; height: 64px; text-align: center; font-family: monospace; letter-spacing: 2px; text-transform: uppercase;" ${podeConsumir && serraSelecionada ? '' : 'disabled'}>
+      <input type="text" id="cs-qrcode" class="form-input" placeholder="${serraSelecionada ? 'LS126-1' : 'Escolha a serra acima'}" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" data-lpignore="true" data-1p-ignore data-bwignore style="font-size: 1.6rem; height: 64px; text-align: center; font-family: monospace; letter-spacing: 2px; text-transform: uppercase;" ${podeConsumir && serraSelecionada ? '' : 'disabled'}>
       <div id="cs-resultado"></div>
       <div id="cs-historico">${historicoHtml()}</div>
     </div>
@@ -189,7 +189,7 @@ export async function renderConsumoSerra(container) {
     salvarSerra(serraSelecionada);
     resultado.innerHTML = '';
     input.disabled = false;
-    input.placeholder = 'LS26-1';
+    input.placeholder = 'LS126-1';
     focar();
   });
 
