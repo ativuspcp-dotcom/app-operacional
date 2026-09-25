@@ -5,16 +5,17 @@ import { esc } from './lamina-seca.js';
 
 const SLUG = 'app_setup_serra';
 
-// Setup da Serra: uma única serra por filial. Tipo é só PRODUÇÃO; espécie/bitola/turno são as mesmas listas
-// dos secadores (importadas de setup-secadores.js). Comprimento e largura NÃO fazem parte do setup: são
-// informados no apontamento. A função do banco salvar_setup_serra é quem valida de verdade.
+// Setup das serras (SERRA 1, SERRA 2...): mesmo padrão dos secadores. Tipo é só PRODUÇÃO; espécie/bitola/turno
+// são as mesmas listas dos secadores (importadas de setup-secadores.js). Comprimento e largura NÃO fazem parte
+// do setup: são informados no apontamento. A função do banco salvar_setup_serra é quem valida de verdade.
 const TIPOS = ['PRODUÇÃO'];
 
-// Serra existe na filial? (pcp_serras) e qual o setup ativo (pcp_op_serra). Sequencial: o supabase-js trava
-// com várias chamadas simultâneas (Web Lock).
-export async function fetchSerraEAtiva() {
+// Serras cadastradas na filial atual (pcp_serras) e o setup ativo de cada uma (pcp_op_serra).
+// Sequencial de propósito: o supabase-js trava com várias chamadas simultâneas (Web Lock).
+// Reaproveitada em producao-serra.js para montar o campo "Local" do apontamento.
+export async function fetchSerrasEAtivas() {
   const { data: serras, error: serraError } = await withTimeout(
-    supabase.from('pcp_serras').select('bpl_id').eq('bpl_id', currentBPLID).eq('ativo', true),
+    supabase.from('pcp_serras').select('nome').eq('bpl_id', currentBPLID).eq('ativo', true).order('nome'),
     10000
   );
   if (serraError) throw serraError;
@@ -25,10 +26,10 @@ export async function fetchSerraEAtiva() {
   );
   if (error) throw error;
 
-  return { temSerra: (serras || []).length > 0, ativa: (ativas || [])[0] || null };
+  return { serras: (serras || []).map(s => s.nome), ativas: ativas || [] };
 }
 
-function statusCardHtml(op) {
+function cardSerra(serra, op) {
   const linha = (rotulo, valor) => `
     <div>
       <div style="font-size: 0.75rem; color: var(--color-text-sec);">${rotulo}</div>
@@ -36,9 +37,9 @@ function statusCardHtml(op) {
     </div>`;
 
   return `
-    <div style="${CARD_STYLE} margin-bottom: 16px;">
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: ${op ? '16px' : '0'};">
-        <div style="font-size: 1.3rem; font-weight: 700;">SERRA</div>
+    <div class="serra-card" data-serra="${esc(serra)}" style="${CARD_STYLE} margin-bottom: 12px; border: 2px solid transparent; cursor: pointer;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+        <div style="font-size: 1.3rem; font-weight: 700;">${esc(serra)}</div>
         ${op
           ? `<span style="background: var(--green-50); color: var(--green-500); font-weight: 600; font-size: 0.8rem; padding: 4px 10px; border-radius: 20px;">ATIVO · ${esc(op.codigo_op)}</span>`
           : '<span style="background: #fef2f2; color: #ef4444; font-weight: 600; font-size: 0.8rem; padding: 4px 10px; border-radius: 20px;">SEM SETUP ATIVO</span>'}
@@ -51,7 +52,10 @@ function statusCardHtml(op) {
           ${linha('Turno', esc(op.turno))}
         </div>
         ${op.responsavel_nome ? `<div style="margin-top: 14px; font-size: 0.8rem; color: var(--color-text-sec);">Definido por ${esc(op.responsavel_nome)}</div>` : ''}
-      ` : ''}
+      ` : '<div style="color: var(--color-text-sec); font-size: 0.9rem;">Toque para definir o setup desta serra.</div>'}
+      ${podeAgir(SLUG)
+        ? `<div style="margin-top: 16px; text-align: right; color: var(--color-primary); font-weight: 600; font-size: 0.9rem;">${op ? 'Alterar setup ›' : 'Definir setup ›'}</div>`
+        : ''}
     </div>
   `;
 }
@@ -59,7 +63,7 @@ function statusCardHtml(op) {
 export async function renderSetupSerra(container) {
   container.innerHTML = `
     ${headerHtml('Setup Serra', '/')}
-    <div class="container mt-4" id="setup-serra-content">
+    <div class="container mt-4" id="serras-content">
       <div class="text-center" style="padding: 40px;">${SPINNER}</div>
     </div>
   `;
@@ -67,31 +71,62 @@ export async function renderSetupSerra(container) {
 
   let dados;
   try {
-    dados = await fetchSerraEAtiva();
+    dados = await fetchSerrasEAtivas();
   } catch (err) {
-    console.error('Erro ao carregar o setup da serra:', err);
-    const content = document.getElementById('setup-serra-content');
-    if (content) renderErro(content, 'Erro ao carregar o setup da serra. Verifique a conexão.');
+    console.error('Erro ao carregar setups das serras:', err);
+    const content = document.getElementById('serras-content');
+    if (content) renderErro(content, 'Erro ao carregar os setups. Verifique a conexão.');
     return;
   }
 
-  const content = document.getElementById('setup-serra-content');
+  const content = document.getElementById('serras-content');
   if (!content) return;
 
-  if (!dados.temSerra) {
+  if (dados.serras.length === 0) {
     content.innerHTML = `<div style="${CARD_STYLE} text-align: center; color: var(--color-text-sec);">Nenhuma serra cadastrada nesta filial.</div>`;
     return;
   }
 
-  const ativo = dados.ativa;
+  content.innerHTML = dados.serras.map(s => cardSerra(s, dados.ativas.find(op => op.serra === s))).join('');
+  content.querySelectorAll('.serra-card').forEach(card => {
+    card.addEventListener('click', () => {
+      if (!podeAgir(SLUG)) return;
+      window.location.hash = `/setup-serra/${encodeURIComponent(card.dataset.serra)}`;
+    });
+  });
+}
 
+export async function renderSetupSerraForm(container, serra) {
   if (!podeAgir(SLUG)) {
-    content.innerHTML = `
-      ${statusCardHtml(ativo)}
-      <div style="${CARD_STYLE} text-align: center; color: var(--color-text-sec); font-size: 0.9rem;">Somente visualização: seu acesso não permite alterar o setup.</div>
-    `;
+    window.location.hash = '/setup-serra';
     return;
   }
+
+  container.innerHTML = `
+    ${headerHtml(`Setup ${esc(serra)}`, '/setup-serra')}
+    <div class="container mt-4" id="setup-form-content">
+      <div class="text-center" style="padding: 40px;">${SPINNER}</div>
+    </div>
+  `;
+  bindHeader();
+
+  let ativo;
+  try {
+    const dados = await fetchSerrasEAtivas();
+    if (!dados.serras.includes(serra)) {
+      window.location.hash = '/setup-serra';
+      return;
+    }
+    ativo = dados.ativas.find(op => op.serra === serra) || null;
+  } catch (err) {
+    console.error('Erro ao carregar o setup ativo:', err);
+    const content = document.getElementById('setup-form-content');
+    if (content) renderErro(content, 'Erro ao carregar o setup atual. Verifique a conexão.');
+    return;
+  }
+
+  const content = document.getElementById('setup-form-content');
+  if (!content) return;
 
   const state = {
     tipo: ativo?.tipo ?? TIPOS[0],
@@ -102,12 +137,11 @@ export async function renderSetupSerra(container) {
   let responsavelValidado = false;
 
   content.innerHTML = `
-    ${statusCardHtml(ativo)}
     <div style="${CARD_STYLE}">
       <div style="margin-bottom: 20px; padding: 12px; background: var(--green-50); border-radius: 8px; font-size: 0.85rem;">
         ${ativo
-          ? `Ao salvar uma alteração, a OP <strong>${esc(ativo.codigo_op)}</strong> é encerrada e uma nova OP é aberta com o novo setup.`
-          : 'A serra ainda não tem setup ativo. Defina o primeiro setup abaixo.'}
+          ? `Setup ativo: <strong>${esc(ativo.codigo_op)}</strong>. Ao salvar uma alteração, uma nova OP é aberta com o novo setup.`
+          : 'Esta serra ainda não tem setup ativo. Defina o primeiro setup abaixo.'}
       </div>
 
       <form id="setup-form" autocomplete="off">
@@ -241,8 +275,8 @@ export async function renderSetupSerra(container) {
     }
 
     const aviso = ativo
-      ? `Alterar o setup da Serra?\n\nA OP ${ativo.codigo_op} será encerrada e uma nova OP será aberta com o novo setup.`
-      : 'Definir o primeiro setup da Serra?';
+      ? `Alterar o setup da ${serra}?\n\nA OP ${ativo.codigo_op} será encerrada e uma nova OP será aberta com o novo setup.`
+      : `Definir o primeiro setup da ${serra}?`;
     if (!window.confirm(aviso)) return;
 
     const textoBotao = btnSave.innerHTML;
@@ -253,6 +287,7 @@ export async function renderSetupSerra(container) {
     let salvou = false;
     try {
       const { data, error } = await withTimeout(rawRpc('salvar_setup_serra', {
+        p_serra: serra,
         p_pin: pinInput.value,
         p_tipo: state.tipo,
         p_especie: state.especie,
@@ -273,7 +308,7 @@ export async function renderSetupSerra(container) {
 
       salvou = true;
       formSuccess.textContent = `Setup salvo! Nova OP ${novo.codigo_op}.`;
-      setTimeout(() => { renderSetupSerra(container); }, 1200);
+      setTimeout(() => { window.location.hash = '/setup-serra'; }, 1200);
     } catch (err) {
       console.error('Erro ao salvar setup da serra:', err);
       const msg = String(err.message);

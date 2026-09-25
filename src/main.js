@@ -3,7 +3,7 @@ import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from './supabase.js';
 import { renderRomaneioSaida } from './romaneio-saida.js';
 import { renderSetupSecadores, renderSetupSecadorForm } from './setup-secadores.js';
 import { renderProducaoSecagem } from './producao-secagem.js';
-import { renderSetupSerra } from './setup-serra.js';
+import { renderSetupSerra, renderSetupSerraForm } from './setup-serra.js';
 import { renderProducaoSerra } from './producao-serra.js';
 
 // Força o recarregamento automático da página quando houver uma nova versão do app (PWA)
@@ -352,6 +352,8 @@ async function route() {
     renderProducaoSecagem(app);
   } else if (path === '/setup-serra') {
     renderSetupSerra(app);
+  } else if (path.startsWith('/setup-serra/')) {
+    renderSetupSerraForm(app, decodeURIComponent(path.split('/')[2]));
   } else if (path === '/producao-serra') {
     renderProducaoSerra(app);
   } else {

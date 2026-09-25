@@ -1,28 +1,28 @@
 import { supabase } from './supabase.js';
 import { withTimeout, rawRpc, podeAgir, getCurrentUserId } from './main.js';
 import { headerHtml, bindHeader, renderErro, SPINNER } from './setup-secadores.js';
-import { fetchSerraEAtiva } from './setup-serra.js';
+import { fetchSerrasEAtivas } from './setup-serra.js';
 import { ENDERECOS, fmtBitola, fmtMedida, esc, calcularTotal, carregarItensSap, acharItemSap, rawInsert, fetchRegrasCubagem } from './lamina-seca.js';
 
 const SLUG = 'app_serra';
-const SERRA = 'SERRA'; // nome usado nas tabelas de medidas/regras (compartilhadas com a Secagem)
 const LOCAIS_ESTOQUE = ['CONSUMIR', 'MERCADO INTERNO'];
 
-// Igual à Produção Secagem (tela de totem), com duas diferenças: comprimento e largura NÃO vêm do setup,
-// são escolhidos aqui numa lista de medidas cadastrada no portal (Configurações > PCP > Serra), e as Opções
+// Igual à Produção Secagem (tela de totem; Local = SERRA 1 / SERRA 2), com duas diferenças: comprimento e
+// largura NÃO vêm do setup, são escolhidos aqui numa lista de medidas da serra cadastrada no portal
+// (Configurações > PCP > Serra; as tabelas de medidas/regras usam o nome da serra em "secador"), e as Opções
 // dependem dessa medida; e o Local Estoque tem outras opções.
 
 // Cache das lâminas secas do SAP (grupo 145): carregado ao entrar na tela e mantido em memória.
 // Para atualizar, o usuário recarrega o app rolando a tela para baixo (mesmo jeito do compensado).
 let carregamentoItensSap = null;
 
-// Medidas ativas da Serra (comprimento x largura). Chamar depois de fetchSerraEAtiva, nunca junto: o
-// supabase-js trava com várias chamadas simultâneas (Web Lock).
-async function fetchMedidasSerra() {
+// Medidas ativas de uma serra (comprimento x largura). Chamar sequencialmente, nunca junto com outra consulta:
+// o supabase-js trava com várias chamadas simultâneas (Web Lock).
+async function fetchMedidasSerra(serra) {
   const { data, error } = await withTimeout(
     supabase.from('pcp_secagem_setup_medidas')
       .select('comprimento, largura')
-      .eq('secador', SERRA)
+      .eq('secador', serra)
       .eq('ativo', true),
     10000
   );
@@ -49,30 +49,25 @@ export async function renderProducaoSerra(container) {
   bindHeader();
 
   let dados;
-  let medidas;
   try {
-    dados = await fetchSerraEAtiva();
-    medidas = await fetchMedidasSerra();
+    dados = await fetchSerrasEAtivas();
   } catch (err) {
-    console.error('Erro ao carregar a serra:', err);
+    console.error('Erro ao carregar as serras:', err);
     const content = document.getElementById('pr-content');
-    if (content) renderErro(content, 'Erro ao carregar a serra. Verifique a conexão.');
+    if (content) renderErro(content, 'Erro ao carregar as serras. Verifique a conexão.');
     return;
   }
 
   const content = document.getElementById('pr-content');
   if (!content) return;
 
-  if (!dados.temSerra) {
+  const locaisComSetup = dados.serras.map(nome => ({
+    nome,
+    op: dados.ativas.find(op => op.serra === nome) || null
+  }));
+
+  if (locaisComSetup.length === 0) {
     content.innerHTML = mensagemCard('Nenhuma serra cadastrada nesta filial.');
-    return;
-  }
-  if (!dados.ativa) {
-    content.innerHTML = mensagemCard('A serra está sem setup ativo. Defina o setup em <strong>Setup Serra</strong> antes de apontar.');
-    return;
-  }
-  if (medidas.length === 0) {
-    content.innerHTML = mensagemCard('Nenhuma medida cadastrada para a serra. Peça ao PCP para cadastrar em Configurações &gt; PCP &gt; Serra.');
     return;
   }
 
@@ -89,19 +84,27 @@ export async function renderProducaoSerra(container) {
             <input type="date" id="pr-data-producao" class="form-input" value="${today}" required>
           </div>
           <div class="form-group">
-            <label class="form-label">Medida (Comp. × Larg.) <span class="required">*</span></label>
-            <select id="pr-medida" class="form-input" style="appearance: auto; height: 48px; background-color: var(--dark-300);" required>
+            <label class="form-label">Local <span class="required">*</span></label>
+            <select id="pr-local" class="form-input" style="appearance: auto; height: 48px; background-color: var(--dark-300);" required>
               <option value="" disabled selected>Selecione...</option>
-              ${medidas.map(m => `<option value="${m.comprimento}|${m.largura}">${fmtMedida(m.comprimento)} × ${fmtMedida(m.largura)}</option>`).join('')}
+              ${locaisComSetup.map(l => `<option value="${esc(l.nome)}" ${!l.op ? 'disabled' : ''}>${esc(l.nome)}${!l.op ? ' (sem setup ativo)' : ''}</option>`).join('')}
             </select>
           </div>
         </div>
 
-        <div class="form-group">
-          <label class="form-label">Opção <span class="required">*</span></label>
-          <select id="pr-opcao" class="form-input" style="appearance: auto; height: 48px;" disabled required>
-            <option value="" selected>Selecione a Medida</option>
-          </select>
+        <div class="grid-2">
+          <div class="form-group">
+            <label class="form-label">Medida (Comp. × Larg.) <span class="required">*</span></label>
+            <select id="pr-medida" class="form-input" style="appearance: auto; height: 48px; background-color: var(--dark-300);" disabled required>
+              <option value="" selected>Selecione o Local</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Opção <span class="required">*</span></label>
+            <select id="pr-opcao" class="form-input" style="appearance: auto; height: 48px;" disabled required>
+              <option value="" selected>Selecione a Medida</option>
+            </select>
+          </div>
         </div>
 
         <div class="form-group">
@@ -169,10 +172,11 @@ export async function renderProducaoSerra(container) {
     return;
   }
 
-  bindForm(dados.ativa);
+  bindForm(locaisComSetup);
 }
 
-function bindForm(op) {
+function bindForm(locaisComSetup) {
+  const localSelect = document.getElementById('pr-local');
   const medidaSelect = document.getElementById('pr-medida');
   const opcaoSelect = document.getElementById('pr-opcao');
   const produtoBox = document.getElementById('pr-produto');
@@ -181,6 +185,8 @@ function bindForm(op) {
   const descontoInput = document.getElementById('pr-desconto');
   const totalInput = document.getElementById('pr-total');
 
+  let op = null; // setup ativo da serra escolhida em Local
+  let medidasDaSerra = [];
   let medidaSelecionada = null; // { comprimento, largura } escolhida no apontamento
   let regrasDisponiveis = [];
   let regraSelecionada = null;
@@ -294,6 +300,36 @@ function bindForm(op) {
     atualizarTotal();
   };
 
+  localSelect.addEventListener('change', async () => {
+    const local = locaisComSetup.find(l => l.nome === localSelect.value);
+    op = local?.op || null;
+    medidaSelecionada = null;
+    medidasDaSerra = [];
+    medidaSelect.disabled = true;
+    medidaSelect.innerHTML = `<option value="" selected>Selecione o Local</option>`;
+    limparOpcao('Selecione a Medida');
+    if (!op) return;
+
+    medidaSelect.innerHTML = `<option value="" selected>Carregando...</option>`;
+    const opDaBusca = op;
+    try {
+      medidasDaSerra = await fetchMedidasSerra(op.serra);
+    } catch (err) {
+      console.error('Erro ao carregar as medidas da serra:', err);
+      medidasDaSerra = [];
+    }
+    if (op !== opDaBusca) return; // o usuário já trocou o Local
+
+    if (medidasDaSerra.length === 0) {
+      medidaSelect.innerHTML = `<option value="" selected>Nenhuma medida cadastrada (peça ao PCP)</option>`;
+      return;
+    }
+
+    medidaSelect.disabled = false;
+    medidaSelect.innerHTML = `<option value="" disabled selected>Selecione...</option>` +
+      medidasDaSerra.map(m => `<option value="${m.comprimento}|${m.largura}">${fmtMedida(m.comprimento)} × ${fmtMedida(m.largura)}</option>`).join('');
+  });
+
   medidaSelect.addEventListener('change', async () => {
     const [comprimento, largura] = medidaSelect.value.split('|').map(Number);
     medidaSelecionada = medidaSelect.value ? { comprimento, largura } : null;
@@ -306,7 +342,7 @@ function bindForm(op) {
     limparOpcao('Carregando...');
     const medidaDaBusca = medidaSelecionada;
     try {
-      regrasDisponiveis = await fetchRegrasCubagem(SERRA, comprimento, largura);
+      regrasDisponiveis = await fetchRegrasCubagem(op.serra, comprimento, largura);
     } catch (err) {
       console.error('Erro ao carregar regras de cubagem:', err);
       regrasDisponiveis = [];
@@ -397,6 +433,10 @@ function bindForm(op) {
     formSuccess.textContent = '';
     if (!podeAgir(SLUG)) return;
 
+    if (!op) {
+      formError.textContent = 'Selecione um Local com setup ativo.';
+      return;
+    }
     if (!medidaSelecionada) {
       formError.textContent = 'Selecione a Medida.';
       return;
@@ -430,6 +470,7 @@ function bindForm(op) {
       const { comprimento, largura } = medidasResolvidas();
       const payload = {
         data_producao: document.getElementById('pr-data-producao').value,
+        local: op.serra,
         turno: op.turno,
         modo: op.tipo,
         especie: op.especie,
