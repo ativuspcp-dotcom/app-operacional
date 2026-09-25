@@ -124,6 +124,19 @@ export async function renderProducaoSecagem(container) {
           </div>
         </div>
 
+        <div class="form-group" style="margin-top: 8px; border-top: 1px solid var(--color-border); padding-top: 16px;">
+          <label style="display: flex; align-items: center; gap: 12px; font-size: 1rem; font-weight: 600; cursor: pointer;">
+            <input type="checkbox" id="ps-etiqueta-manual" style="width: 24px; height: 24px;">
+            Inserir etiqueta manual
+          </label>
+          <div id="ps-etiqueta-manual-box" style="display: none; margin-top: 12px;">
+            <label class="form-label" for="ps-qrcode-manual">Bipe a etiqueta pré-impressa (QR Code) <span class="required">*</span></label>
+            <input type="text" id="ps-qrcode-manual" class="form-input" placeholder="Bipe a etiqueta" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" data-lpignore="true" data-1p-ignore data-bwignore style="font-size: 1.3rem; height: 56px; text-align: center; font-family: monospace; letter-spacing: 1px; text-transform: uppercase;">
+            <div id="ps-qrcode-manual-msg" style="font-size: 0.85rem; margin-top: 6px; min-height: 18px;"></div>
+            <div style="font-size: 0.8rem; color: var(--color-text-sec);">Com etiqueta manual o sistema não gera código automático e não imprime.</div>
+          </div>
+        </div>
+
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0 16px; margin-top: 8px; border-top: 1px solid var(--color-border); padding-top: 16px;">
           <div class="form-group">
             <label class="form-label text-center">Senha (PIN)</label>
@@ -373,6 +386,63 @@ function bindForm(locaisComSetup) {
     }
   });
 
+  // Etiqueta manual: etiqueta impressa antecipadamente, com código próprio. Sem código automático e sem impressão;
+  // o banco aceita o código bipado (em MAIÚSCULAS) desde que ainda não exista em nenhum apontamento.
+  const manualCheck = document.getElementById('ps-etiqueta-manual');
+  const manualBox = document.getElementById('ps-etiqueta-manual-box');
+  const qrManualInput = document.getElementById('ps-qrcode-manual');
+  const qrManualMsg = document.getElementById('ps-qrcode-manual-msg');
+  let etiquetaManualEmUso = false;
+  let verificacaoId = 0;
+
+  const msgQr = (texto, cor) => {
+    qrManualMsg.textContent = texto;
+    qrManualMsg.style.color = cor || 'var(--color-text-sec)';
+  };
+
+  const verificarEtiquetaManual = async () => {
+    const qr = qrManualInput.value.trim().toUpperCase();
+    qrManualInput.value = qr;
+    etiquetaManualEmUso = false;
+    if (!qr) { msgQr(''); return; }
+
+    const meuId = ++verificacaoId;
+    msgQr('Conferindo etiqueta...');
+    try {
+      const { data, error } = await withTimeout(rawRpc('qrcode_em_uso', { p_qrcode: qr }), 10000);
+      if (meuId !== verificacaoId) return;
+      if (error) throw new Error(error.message || 'ERRO');
+      if (data === true) {
+        etiquetaManualEmUso = true;
+        msgQr('Etiqueta já usada em outro apontamento. Bipe outra.', '#ef4444');
+        qrManualInput.select();
+      } else {
+        msgQr('✓ Etiqueta livre', '#059669');
+      }
+    } catch (err) {
+      if (meuId !== verificacaoId) return;
+      msgQr('Não deu para conferir agora; o banco confere ao salvar.');
+    }
+  };
+
+  manualCheck.addEventListener('change', () => {
+    manualBox.style.display = manualCheck.checked ? 'block' : 'none';
+    qrManualInput.required = manualCheck.checked;
+    verificacaoId++;
+    etiquetaManualEmUso = false;
+    qrManualInput.value = '';
+    msgQr('');
+    if (manualCheck.checked) qrManualInput.focus();
+  });
+
+  qrManualInput.addEventListener('keydown', async (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault(); // o leitor termina o QR com Enter: não pode enviar o formulário
+    await verificarEtiquetaManual();
+    if (!etiquetaManualEmUso && qrManualInput.value) pinInput.focus();
+  });
+  qrManualInput.addEventListener('change', verificarEtiquetaManual);
+
   document.getElementById('ps-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     formError.textContent = '';
@@ -400,6 +470,19 @@ function bindForm(locaisComSetup) {
       formError.textContent = 'A quantidade de peças deve ser um número inteiro.';
       return;
     }
+    const manual = manualCheck.checked;
+    const qrManual = qrManualInput.value.trim().toUpperCase();
+    if (manual) {
+      if (!qrManual) {
+        formError.textContent = 'Bipe a etiqueta manual.';
+        qrManualInput.focus();
+        return;
+      }
+      if (etiquetaManualEmUso) {
+        formError.textContent = 'Esta etiqueta já foi usada em outro apontamento. Bipe outra.';
+        return;
+      }
+    }
     if (!respIdInput.value) {
       formError.textContent = 'Digite um PIN válido para prosseguir.';
       return;
@@ -410,6 +493,7 @@ function bindForm(locaisComSetup) {
 
     try {
       const payload = {
+        ...(manual ? { qrcode: qrManual } : {}),
         data_producao: document.getElementById('ps-data-producao').value,
         local: opSelecionada.secador,
         turno: opSelecionada.turno,
@@ -436,6 +520,10 @@ function bindForm(locaisComSetup) {
       if (insertError) throw new Error(insertError.message || JSON.stringify(insertError));
       if (!insertData) throw new Error('Insert não retornou dados.');
 
+      if (manual) {
+        // Etiqueta pré-impressa: não imprime nada, o código é o que foi bipado
+        formSuccess.textContent = `Apontamento ${insertData.qrcode} salvo com etiqueta manual (sem impressão).`;
+      } else {
       // Etiqueta: POST para a impressora (https://tableros.ngrok.app/secagem). Valores como texto, igual ao da
       // Amarração; pecas_altura é a quantidade digitada no form (peças ou altura), não a Opção.
       const etiqueta = {
@@ -461,11 +549,20 @@ function bindForm(locaisComSetup) {
           ? `Impressora falhou ${motivo} e NÃO foi possível cancelar o apontamento ${insertData.qrcode}. Avise o PCP. Detalhe: ${impressao.texto}`
           : `Impressora falhou ${motivo}. Apontamento cancelado e não salvo no banco. Detalhe: ${impressao.texto}`;
       }
+      }
 
       // Reset só PIN e Responsável: mantém o resto preenchido para o próximo apontamento da mesma remessa
       pinInput.value = '';
       pinInput.disabled = false;
-      pinInput.focus();
+      if (manual) {
+        // Próxima etiqueta pré-impressa: limpa o campo e já deixa pronto para bipar
+        qrManualInput.value = '';
+        etiquetaManualEmUso = false;
+        msgQr('');
+        qrManualInput.focus();
+      } else {
+        pinInput.focus();
+      }
       respInput.value = '';
       respIdInput.value = '';
       respInput.classList.remove('success-text');
@@ -473,7 +570,23 @@ function bindForm(locaisComSetup) {
       setTimeout(() => { formSuccess.textContent = ''; }, 3000);
     } catch (err) {
       console.error('[PRODUCAO SECAGEM ERROR]', err);
-      formError.textContent = 'Erro ao salvar: ' + err.message;
+      const msg = String(err.message);
+      if (msg.includes('QRCODE_DUPLICADO')) {
+        // Outro tablet usou a etiqueta no meio tempo: nada foi gravado; pede outra etiqueta e o PIN de novo
+        formError.textContent = 'Esta etiqueta já foi usada em outro apontamento. Nada foi salvo. Bipe outra etiqueta.';
+        qrManualInput.value = '';
+        etiquetaManualEmUso = false;
+        msgQr('');
+        qrManualInput.focus();
+        pinInput.value = '';
+        respInput.value = '';
+        respIdInput.value = '';
+        respInput.classList.remove('success-text');
+      } else if (msg.includes('QRCODE_INVALIDO')) {
+        formError.textContent = 'Código de etiqueta inválido (máximo de 60 caracteres). Bipe de novo.';
+      } else {
+        formError.textContent = 'Erro ao salvar: ' + msg;
+      }
     } finally {
       btnSave.disabled = true; // Desabilitado porque o PIN foi limpo
       btnSave.innerHTML = `
