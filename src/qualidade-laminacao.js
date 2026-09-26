@@ -371,8 +371,10 @@ async function enviarFoto(path, blob) {
 }
 
 async function salvarRegistro(pin, aoProgredir) {
+  // 1) Fotos que ainda não estão no Storage (fetch nativo, poucas ao mesmo tempo). Try/catch separado do
+  // registro: assim a mensagem diz em qual das duas etapas falhou, em vez de um "sem conexão" genérico que
+  // esconde a causa real (ex.: foto grande demais para o bucket, token expirado, política do Storage).
   try {
-    // 1) Fotos que ainda não estão no Storage (fetch nativo, poucas ao mesmo tempo)
     const pendentes = [];
     for (const [tipo, itens] of Object.entries(estado.medidas)) {
       itens.forEach((pontos, i) => pontos.forEach((p, j) => {
@@ -394,8 +396,13 @@ async function salvarRegistro(pin, aoProgredir) {
       }
     };
     await Promise.all(Array.from({ length: Math.min(UPLOADS_SIMULTANEOS, total) }, trabalhador));
+  } catch (err) {
+    console.error('Erro ao enviar fotos do RQ03:', err);
+    return { ok: false, mensagem: `Falha ao enviar as fotos: ${err.message || 'erro desconhecido'}. O rascunho foi mantido: toque em Salvar para tentar de novo.` };
+  }
 
-    // 2) Registro (a função confere PIN, permissão, filial e se as 36 fotos existem)
+  // 2) Registro (a função confere PIN, permissão, filial e se as 36 fotos existem)
+  try {
     aoProgredir('Gravando registro...');
     const numero = (t) => Number(String(t).replace(',', '.'));
     const pontosDe = (tipo, i) => estado.medidas[tipo][i].map(p => ({ valor: numero(p.valor), foto_em: p.capturadaEm }));
@@ -415,15 +422,15 @@ async function salvarRegistro(pin, aoProgredir) {
         return { ok: false, mensagem: 'Alguma foto não chegou ao servidor. Toque em Salvar para reenviar.' };
       }
       console.error('Erro ao gravar RQ03:', error);
-      return { ok: false, mensagem: 'Não foi possível gravar. Confira os valores e tente de novo.' };
+      return { ok: false, mensagem: `Não foi possível gravar: ${msg || 'erro desconhecido'}. Confira os valores e tente de novo.` };
     }
     if (data?.status === 'PIN_INVALIDO') return { ok: false, mensagem: 'PIN inválido ou inativo.' };
     if (data?.status === 'LINHA_INEXISTENTE') return { ok: false, mensagem: 'Esta linha não está mais disponível. Volte e escolha de novo.' };
-    if (data?.status !== 'OK') return { ok: false, mensagem: 'Resposta inesperada do servidor. Tente de novo.' };
+    if (data?.status !== 'OK') return { ok: false, mensagem: `Resposta inesperada do servidor (${JSON.stringify(data)}). Tente de novo.` };
     return { ok: true };
   } catch (err) {
-    console.error('Erro ao salvar RQ03:', err);
-    return { ok: false, mensagem: 'Sem conexão com o servidor. O rascunho foi mantido: toque em Salvar para tentar de novo.' };
+    console.error('Erro ao gravar RQ03:', err);
+    return { ok: false, mensagem: `Sem conexão com o servidor: ${err.message || 'erro desconhecido'}. O rascunho foi mantido: toque em Salvar para tentar de novo.` };
   }
 }
 
