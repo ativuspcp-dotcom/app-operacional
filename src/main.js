@@ -6,6 +6,7 @@ import { renderProducaoSecagem } from './producao-secagem.js';
 import { renderSetupSerra, renderSetupSerraForm } from './setup-serra.js';
 import { renderProducaoSerra } from './producao-serra.js';
 import { renderConsumoSerra } from './consumo-serra.js';
+import { renderQualidadeLaminacao } from './qualidade-laminacao.js';
 
 // Força o recarregamento automático da página quando houver uma nova versão do app (PWA)
 if ('serviceWorker' in navigator) {
@@ -136,7 +137,7 @@ export function setBPLID(id) {
  * bypassing o Web Lock interno do supabase-js que trava o segundo insert.
  * Lê o token diretamente do localStorage para evitar qualquer chamada ao supabase-js.
  */
-function getAccessToken() {
+export function getAccessToken() {
   // Lê o token direto do localStorage — sem passar pelo supabase-js e seu Web Lock
   const storageKey = `sb-mqtyjzdwwgeycvmbiqsg-auth-token`;
   try {
@@ -359,6 +360,8 @@ async function route() {
     renderProducaoSerra(app);
   } else if (path === '/consumo-serra') {
     renderConsumoSerra(app);
+  } else if (path === '/qualidade-laminacao') {
+    renderQualidadeLaminacao(app);
   } else {
     app.innerHTML = '<div class="container text-center mt-4">Página não encontrada. <br><br><button class="btn btn-primary" onclick="window.location.hash=\'/\'">Voltar</button></div>';
   }
@@ -490,6 +493,8 @@ async function renderHome(container) {
         iconSvg = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"></line><line x1="4" y1="10" x2="4" y2="3"></line><line x1="12" y1="21" x2="12" y2="12"></line><line x1="12" y1="8" x2="12" y2="3"></line><line x1="20" y1="21" x2="20" y2="16"></line><line x1="20" y1="12" x2="20" y2="3"></line><line x1="1" y1="14" x2="7" y2="14"></line><line x1="9" y1="8" x2="15" y2="8"></line><line x1="17" y1="16" x2="23" y2="16"></line></svg>';
       } else if (mod.slug === 'app_consumo_serra') {
         iconSvg = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect><line x1="14" y1="14" x2="14" y2="14.01"></line><line x1="18" y1="14" x2="21" y2="14"></line><line x1="14" y1="18" x2="14" y2="21"></line><line x1="18" y1="18" x2="21" y2="21"></line></svg>';
+      } else if (mod.slug === 'app_qualidade_laminacao') {
+        iconSvg = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>';
       } else if (mod.slug === 'app_serra') {
         iconSvg ='<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><circle cx="12" cy="12" r="3"></circle><line x1="12" y1="3" x2="12" y2="6"></line><line x1="12" y1="18" x2="12" y2="21"></line><line x1="3" y1="12" x2="6" y2="12"></line><line x1="18" y1="12" x2="21" y2="12"></line></svg>';
       } else if (mod.slug === 'app_secagem') {
@@ -516,6 +521,8 @@ async function renderHome(container) {
           window.location.hash = '/producao-serra';
         } else if (mod.slug === 'app_consumo_serra') {
           window.location.hash = '/consumo-serra';
+        } else if (mod.slug === 'app_qualidade_laminacao') {
+          window.location.hash = '/qualidade-laminacao';
         } else {
           alert('Módulo ' + mod.name + ' em desenvolvimento.');
         }
