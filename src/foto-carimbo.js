@@ -5,7 +5,10 @@
 // a foto chega ao app; o instante também é guardado em capturadaEm (vai para o banco como foto_em).
 
 const LADO_MAX = 1024; // px do lado maior (reduzido de 1280 em 2026-09-26: retenção de 60 dias, ver PLANO_RQ03.md)
-const QUALIDADE_JPEG = 0.55;
+// 0,45 (reduzido de 0,55 em 2026-09-26, medido em 51 KB/foto em média): resolução mantida de propósito
+// (protege a legibilidade da trena/termômetro na foto); só a qualidade JPEG desce. Se a foto ficar ruim
+// pra ler, subir esse número; se quiser reduzir mais, mexer aqui antes de mexer em LADO_MAX.
+const QUALIDADE_JPEG = 0.45;
 
 const pad = (n) => String(n).padStart(2, '0');
 const fmtCarimbo = (d) => `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
