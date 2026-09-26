@@ -1,6 +1,6 @@
-import { SUPABASE_URL, SUPABASE_ANON_KEY } from './supabase.js';
+import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from './supabase.js';
 import { currentBPLID, withTimeout, rawRpc, podeAgir, getAccessToken, renderBranchSelector, bindBranchSelector } from './main.js';
-import { CARD_STYLE, headerHtml, bindHeader } from './setup-secadores.js';
+import { CARD_STYLE, headerHtml, bindHeader, renderErro, SPINNER } from './setup-secadores.js';
 import { esc } from './lamina-seca.js';
 import { capturarFotoComCarimbo } from './foto-carimbo.js';
 
@@ -54,6 +54,7 @@ function novoEstado() {
   return {
     id: crypto.randomUUID(), // vira o id do registro e entra no caminho das fotos (reenvio é idempotente)
     bplId: currentBPLID,
+    linha: null, // CHINÊS 8' / CHINÊS 4' (pcp_laminadoras) — escolhida antes de começar, ver renderEscolhaLinha
     etapa: 0,
     padroes: { comprimento: '', largura: '', espessura: '' },
     medidas,
@@ -61,7 +62,8 @@ function novoEstado() {
   };
 }
 
-const temProgresso = () => estado.etapa > 0
+const temProgresso = () => !!estado.linha
+  || estado.etapa > 0
   || Object.values(estado.padroes).some(Boolean)
   || Object.values(estado.medidas).some(itens => itens.some(pts => pts.some(p => p.valor || p.foto)));
 
@@ -85,7 +87,14 @@ function paraNumero(texto) {
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
-const caminhoFoto = (tipo, indice, ponto) => `rq03/${estado.bplId}/${estado.id}/${tipo}-${indice}-${ponto}.jpg`;
+const caminhoFoto = (tipo, indice, ponto) => `rq03/${estado.bplId}/${estado.linha}/${estado.id}/${tipo}-${indice}-${ponto}.jpg`;
+
+/** dd/mm às hh:mm no horário local (mesmo formato usado no histórico do Consumo Serra). */
+function fmtHora(iso) {
+  const d = new Date(iso);
+  const p = (n) => String(n).padStart(2, '0');
+  return `${p(d.getDate())}/${p(d.getMonth() + 1)} às ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
 
 function tituloEtapa(etapa) {
   if (etapa.tipo === 'final') return 'Revisão e confirmação';
@@ -109,7 +118,7 @@ function cabecalho() {
   return `
     <div class="header" style="justify-content: space-between; gap: 8px;">
       <button id="btn-back" style="color: white; padding: 8px; border:none; background:transparent;">${BACK_SVG}</button>
-      <div class="header-title" style="flex: 1;">RQ03 · Qualidade Laminação</div>
+      <div class="header-title" style="flex: 1;">RQ03 · ${esc(estado.linha)}</div>
       ${temProgresso() ? '' : renderBranchSelector()}
     </div>`;
 }
@@ -184,7 +193,7 @@ function renderEtapa(container) {
   back.addEventListener('click', voltarAoMenu);
   bindBranchSelector();
   document.getElementById('btn-descartar')?.addEventListener('click', () => {
-    if (confirm('Descartar tudo o que foi preenchido neste registro?')) { descartarRascunho(); renderEtapa(container); }
+    if (confirm('Descartar tudo o que foi preenchido neste registro?')) { descartarRascunho(); entrarFluxo(container); }
   });
 
   if (ultima) renderRevisao(container);
@@ -360,7 +369,7 @@ async function salvarRegistro(pin, aoProgredir) {
       padroes: Object.fromEntries(Object.keys(estado.padroes).map(k => [k, numero(estado.padroes[k])])),
       ...Object.fromEntries(Object.keys(TIPOS).map(tipo => [tipo, estado.medidas[tipo].map((_, i) => pontosDe(tipo, i))]))
     };
-    const { data, error } = await withTimeout(rawRpc('registrar_rq03_laminacao', { p_pin: pin, p_bpl_id: estado.bplId, p_id: estado.id, p_dados: dados }), 30000);
+    const { data, error } = await withTimeout(rawRpc('registrar_rq03_laminacao', { p_pin: pin, p_bpl_id: estado.bplId, p_linha: estado.linha, p_id: estado.id, p_dados: dados }), 30000);
 
     if (error) {
       const msg = String(error.message || '');
@@ -375,6 +384,7 @@ async function salvarRegistro(pin, aoProgredir) {
       return { ok: false, mensagem: 'Não foi possível gravar. Confira os valores e tente de novo.' };
     }
     if (data?.status === 'PIN_INVALIDO') return { ok: false, mensagem: 'PIN inválido ou inativo.' };
+    if (data?.status === 'LINHA_INEXISTENTE') return { ok: false, mensagem: 'Esta linha não está mais disponível. Volte e escolha de novo.' };
     if (data?.status !== 'OK') return { ok: false, mensagem: 'Resposta inesperada do servidor. Tente de novo.' };
     return { ok: true };
   } catch (err) {
@@ -395,11 +405,87 @@ function renderSucesso(container) {
         <button type="button" id="btn-inicio" class="btn" style="background: white; border: 1px solid var(--color-border);">Voltar ao início</button>
       </div>
     </div>`;
-  document.getElementById('btn-novo').addEventListener('click', () => renderEtapa(container));
+  document.getElementById('btn-novo').addEventListener('click', () => entrarFluxo(container));
   document.getElementById('btn-inicio').addEventListener('click', voltarAoMenu);
 }
 
-// ---------- entrada do RQ03 ----------
+// ---------- entrada do RQ03: escolha da linha, depois o formulário ----------
+
+function entrarFluxo(container) {
+  if (!estado.linha) renderEscolhaLinha(container);
+  else renderEtapa(container);
+}
+
+function cardLinha(nome, ultimo) {
+  let corBg = '#f3f4f6', corTxt = 'var(--color-text-sec)', texto = 'Sem apontamento registrado ainda';
+  if (ultimo) {
+    const atrasado = (Date.now() - new Date(ultimo).getTime()) / 60000 > 65; // conferência é de hora em hora
+    corBg = atrasado ? '#fef2f2' : 'var(--green-50)';
+    corTxt = atrasado ? '#dc2626' : 'var(--green-500)';
+    texto = `${atrasado ? 'Atrasado · último' : 'Último'}: ${fmtHora(ultimo)}`;
+  }
+  return `
+    <div class="linha-card" data-linha="${esc(nome)}" style="${CARD_STYLE} margin-bottom: 12px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; gap: 12px;">
+      <div style="font-size: 1.15rem; font-weight: 700;">${esc(nome)}</div>
+      <span style="background: ${corBg}; color: ${corTxt}; font-weight: 600; font-size: 0.8rem; padding: 4px 10px; border-radius: 20px; white-space: nowrap;">${texto}</span>
+    </div>`;
+}
+
+// Linhas de laminação da filial (pcp_laminadoras) + horário do último apontamento de cada uma, para o
+// apontador ver de cara qual linha ainda não foi conferida nesta hora (badge vermelho = atrasada).
+async function renderEscolhaLinha(container) {
+  container.innerHTML = `
+    ${headerHtml('RQ03 · Qualidade Laminação', '/qualidade-laminacao')}
+    <div class="container mt-4" id="linha-content"><div class="text-center" style="padding: 40px;">${SPINNER}</div></div>`;
+  bindHeader();
+
+  let linhas;
+  try {
+    const { data, error } = await withTimeout(
+      supabase.from('pcp_laminadoras').select('nome').eq('bpl_id', currentBPLID).eq('ativo', true).order('nome'),
+      10000
+    );
+    if (error) throw error;
+    linhas = (data || []).map(l => l.nome);
+  } catch (err) {
+    console.error('Erro ao carregar linhas de laminação:', err);
+    const content = document.getElementById('linha-content');
+    if (content) renderErro(content, 'Erro ao carregar as linhas. Verifique a conexão.');
+    return;
+  }
+
+  const content = document.getElementById('linha-content');
+  if (!content) return;
+
+  if (linhas.length === 0) {
+    content.innerHTML = `<div style="${CARD_STYLE} text-align: center; color: var(--color-text-sec);">Nenhuma linha de laminação cadastrada nesta filial.</div>`;
+    return;
+  }
+
+  // Sequencial de propósito: o supabase-js trava com várias chamadas simultâneas (Web Lock).
+  const ultimos = {};
+  for (const linha of linhas) {
+    try {
+      const { data, error } = await withTimeout(
+        supabase.from('qualidade_laminacao_rq03').select('created_at').eq('bpl_id', currentBPLID).eq('linha', linha).order('created_at', { ascending: false }).limit(1),
+        10000
+      );
+      if (error) throw error;
+      ultimos[linha] = data?.[0]?.created_at || null;
+    } catch (err) {
+      console.error('Erro ao buscar último apontamento da linha', linha, err);
+      ultimos[linha] = null;
+    }
+  }
+
+  content.innerHTML = `
+    <div style="margin-bottom: 10px; font-size: 0.85rem; color: var(--color-text-sec);">Escolha a linha para este apontamento:</div>
+    ${linhas.map(linha => cardLinha(linha, ultimos[linha])).join('')}`;
+
+  content.querySelectorAll('.linha-card').forEach(el => {
+    el.addEventListener('click', () => { estado.linha = el.dataset.linha; renderEtapa(container); });
+  });
+}
 
 export function renderRq03Laminacao(container) {
   if (!podeAgir(SLUG)) {
@@ -411,7 +497,7 @@ export function renderRq03Laminacao(container) {
   }
   // Rascunho de outra filial não vale: as fotos vão para a pasta da filial escolhida
   if (!estado || estado.bplId !== currentBPLID) descartarRascunho();
-  renderEtapa(container);
+  entrarFluxo(container);
 }
 
 // ---------- menu do módulo (RQ01 / RQ02 / RQ03 da Laminação) ----------
