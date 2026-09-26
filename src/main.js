@@ -6,7 +6,7 @@ import { renderProducaoSecagem } from './producao-secagem.js';
 import { renderSetupSerra, renderSetupSerraForm } from './setup-serra.js';
 import { renderProducaoSerra } from './producao-serra.js';
 import { renderConsumoSerra } from './consumo-serra.js';
-import { renderQualidadeLaminacao } from './qualidade-laminacao.js';
+import { renderQualidadeLaminacao, renderRq03Laminacao } from './qualidade-laminacao.js';
 
 // Força o recarregamento automático da página quando houver uma nova versão do app (PWA)
 if ('serviceWorker' in navigator) {
@@ -362,6 +362,8 @@ async function route() {
     renderConsumoSerra(app);
   } else if (path === '/qualidade-laminacao') {
     renderQualidadeLaminacao(app);
+  } else if (path === '/qualidade-laminacao/rq03') {
+    renderRq03Laminacao(app);
   } else {
     app.innerHTML = '<div class="container text-center mt-4">Página não encontrada. <br><br><button class="btn btn-primary" onclick="window.location.hash=\'/\'">Voltar</button></div>';
   }

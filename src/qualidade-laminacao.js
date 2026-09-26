@@ -1,6 +1,6 @@
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './supabase.js';
 import { currentBPLID, withTimeout, rawRpc, podeAgir, getAccessToken, renderBranchSelector, bindBranchSelector } from './main.js';
-import { CARD_STYLE } from './setup-secadores.js';
+import { CARD_STYLE, headerHtml, bindHeader } from './setup-secadores.js';
 import { esc } from './lamina-seca.js';
 import { capturarFotoComCarimbo } from './foto-carimbo.js';
 
@@ -104,6 +104,7 @@ function etapaCompleta(etapa) {
 // ---------- tela ----------
 
 // O seletor de filial só aparece antes de começar: trocar a filial recarrega o app e perderia o rascunho.
+// Volta para o menu de RQs da Laminação (não para o início do app).
 function cabecalho() {
   return `
     <div class="header" style="justify-content: space-between; gap: 8px;">
@@ -112,6 +113,7 @@ function cabecalho() {
       ${temProgresso() ? '' : renderBranchSelector()}
     </div>`;
 }
+const voltarAoMenu = () => { window.location.hash = '/qualidade-laminacao'; };
 
 function htmlPonto(cfg, etapa, ponto, dados) {
   const foto = dados.foto
@@ -179,7 +181,7 @@ function renderEtapa(container) {
     </div>`;
 
   const back = document.getElementById('btn-back');
-  back.addEventListener('click', () => { window.location.hash = '/'; });
+  back.addEventListener('click', voltarAoMenu);
   bindBranchSelector();
   document.getElementById('btn-descartar')?.addEventListener('click', () => {
     if (confirm('Descartar tudo o que foi preenchido neste registro?')) { descartarRascunho(); renderEtapa(container); }
@@ -394,20 +396,48 @@ function renderSucesso(container) {
       </div>
     </div>`;
   document.getElementById('btn-novo').addEventListener('click', () => renderEtapa(container));
-  document.getElementById('btn-inicio').addEventListener('click', () => { window.location.hash = '/'; });
+  document.getElementById('btn-inicio').addEventListener('click', voltarAoMenu);
 }
 
-// ---------- entrada ----------
+// ---------- entrada do RQ03 ----------
 
-export function renderQualidadeLaminacao(container) {
+export function renderRq03Laminacao(container) {
   if (!podeAgir(SLUG)) {
     container.innerHTML = `
-      <div class="header"><button id="btn-back" style="color: white; padding: 8px; border:none; background:transparent;">${BACK_SVG}</button><div class="header-title" style="flex: 1;">RQ03 · Qualidade Laminação</div></div>
+      ${headerHtml('RQ03 · Qualidade Laminação', '/qualidade-laminacao')}
       <div class="container mt-4"><div style="${CARD_STYLE} text-align: center;" class="error-text">Somente visualização: seu acesso não permite registrar.</div></div>`;
-    document.getElementById('btn-back').addEventListener('click', () => { window.location.hash = '/'; });
+    bindHeader();
     return;
   }
   // Rascunho de outra filial não vale: as fotos vão para a pasta da filial escolhida
   if (!estado || estado.bplId !== currentBPLID) descartarRascunho();
   renderEtapa(container);
+}
+
+// ---------- menu do módulo (RQ01 / RQ02 / RQ03 da Laminação) ----------
+// A Laminação tem 3 RQs (mesma estrutura do portal, Qualidade > Registros > Laminação); só o RQ03 está
+// construído. Incluir um novo RQ aqui = acrescentar em RQS_MENU (a tela dele fica noutro módulo/arquivo).
+const RQS_MENU = [
+  { codigo: 'RQ01', nome: 'a definir', pronto: false },
+  { codigo: 'RQ02', nome: 'a definir', pronto: false },
+  { codigo: 'RQ03', nome: 'Comprimento, largura, espessura, esquadro e temperatura dos roletes', pronto: true, hash: '/qualidade-laminacao/rq03' }
+];
+
+export function renderQualidadeLaminacao(container) {
+  container.innerHTML = `
+    ${headerHtml('Qualidade Laminação', '/')}
+    <div class="container mt-4">
+      ${RQS_MENU.map(rq => `
+        <div class="rq-menu-item" data-hash="${rq.hash || ''}" style="${CARD_STYLE} margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; gap: 12px; ${rq.pronto ? 'cursor: pointer;' : 'opacity: .55;'}">
+          <div>
+            <div style="font-size: 1.05rem; font-weight: 700;">${rq.codigo}</div>
+            <div style="font-size: 0.85rem; color: var(--color-text-sec);">${rq.pronto ? esc(rq.nome) : 'Em desenvolvimento'}</div>
+          </div>
+          ${rq.pronto ? '<span style="color: var(--color-primary); font-size: 1.3rem;">›</span>' : ''}
+        </div>`).join('')}
+    </div>`;
+  bindHeader();
+  container.querySelectorAll('.rq-menu-item[data-hash]:not([data-hash=""])').forEach(el => {
+    el.addEventListener('click', () => { window.location.hash = el.dataset.hash; });
+  });
 }
