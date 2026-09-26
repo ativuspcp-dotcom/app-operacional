@@ -60,6 +60,7 @@ function novoEstado() {
     id: crypto.randomUUID(), // vira o id do registro e entra no caminho das fotos (reenvio é idempotente)
     bplId: currentBPLID,
     linha: null, // CHINÊS 8' / CHINÊS 4' (pcp_laminadoras) — escolhida antes de começar, ver renderEscolhaLinha
+    linhaId: null, // uuid de pcp_laminadoras.id — usado no caminho da foto (nome tem espaço/acento/apóstrofo)
     etapa: 0,
     padroes: { comprimento: '', largura: '', espessura: '' },
     medidas,
@@ -86,6 +87,7 @@ function persistirRascunho() {
     id: estado.id,
     bplId: estado.bplId,
     linha: estado.linha,
+    linhaId: estado.linhaId,
     etapa: estado.etapa,
     padroes: estado.padroes,
     medidas: Object.fromEntries(Object.entries(estado.medidas).map(([tipo, itens]) => [tipo, itens.map(pts => pts.map(semUrl))])),
@@ -117,7 +119,9 @@ function paraNumero(texto) {
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
-const caminhoFoto = (tipo, indice, ponto) => `rq03/${estado.bplId}/${estado.linha}/${estado.id}/${tipo}-${indice}-${ponto}.jpg`;
+// Usa o ID da linha (uuid), não o nome: o Supabase Storage recusa letra acentuada na chave do objeto
+// ("Invalid key" — nomes como "CHINÊS 8'" têm "Ê"). O nome continua indo pra coluna `linha` do registro.
+const caminhoFoto = (tipo, indice, ponto) => `rq03/${estado.bplId}/${estado.linhaId}/${estado.id}/${tipo}-${indice}-${ponto}.jpg`;
 
 /** dd/mm às hh:mm no horário local (mesmo formato usado no histórico do Consumo Serra). */
 function fmtHora(iso) {
@@ -452,12 +456,30 @@ function renderSucesso(container) {
 
 // ---------- entrada do RQ03: escolha da linha, depois o formulário ----------
 
-function entrarFluxo(container) {
-  if (!estado.linha) renderEscolhaLinha(container);
-  else renderEtapa(container);
+async function entrarFluxo(container) {
+  if (!estado.linha) { renderEscolhaLinha(container); return; }
+  if (!estado.linhaId) {
+    // Auto-cura: rascunho salvo por uma versão anterior (antes do caminho da foto usar o id da linha).
+    // Busca o id agora; se não achar, a linha não existe/está inativa mais — melhor escolher de novo.
+    try {
+      const { data, error } = await withTimeout(
+        supabase.from('pcp_laminadoras').select('id').eq('bpl_id', estado.bplId).eq('nome', estado.linha).eq('ativo', true).single(),
+        10000
+      );
+      if (error) throw error;
+      estado.linhaId = data.id;
+      persistirRascunho();
+    } catch (err) {
+      console.error('Erro ao resolver o id da linha do rascunho:', err);
+      estado.linha = null;
+      renderEscolhaLinha(container);
+      return;
+    }
+  }
+  renderEtapa(container);
 }
 
-function cardLinha(nome, ultimo) {
+function cardLinha(id, nome, ultimo) {
   let corBg = '#f3f4f6', corTxt = 'var(--color-text-sec)', texto = 'Sem apontamento registrado ainda';
   if (ultimo) {
     const atrasado = (Date.now() - new Date(ultimo).getTime()) / 60000 > 65; // conferência é de hora em hora
@@ -466,7 +488,7 @@ function cardLinha(nome, ultimo) {
     texto = `${atrasado ? 'Atrasado · último' : 'Último'}: ${fmtHora(ultimo)}`;
   }
   return `
-    <div class="linha-card" data-linha="${esc(nome)}" style="${CARD_STYLE} margin-bottom: 12px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; gap: 12px;">
+    <div class="linha-card" data-linha="${esc(nome)}" data-linha-id="${esc(id)}" style="${CARD_STYLE} margin-bottom: 12px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; gap: 12px;">
       <div style="font-size: 1.15rem; font-weight: 700;">${esc(nome)}</div>
       <span style="background: ${corBg}; color: ${corTxt}; font-weight: 600; font-size: 0.8rem; padding: 4px 10px; border-radius: 20px; white-space: nowrap;">${texto}</span>
     </div>`;
@@ -483,11 +505,11 @@ async function renderEscolhaLinha(container) {
   let linhas;
   try {
     const { data, error } = await withTimeout(
-      supabase.from('pcp_laminadoras').select('nome').eq('bpl_id', currentBPLID).eq('ativo', true).order('nome'),
+      supabase.from('pcp_laminadoras').select('id, nome').eq('bpl_id', currentBPLID).eq('ativo', true).order('nome'),
       10000
     );
     if (error) throw error;
-    linhas = (data || []).map(l => l.nome);
+    linhas = data || [];
   } catch (err) {
     console.error('Erro ao carregar linhas de laminação:', err);
     const content = document.getElementById('linha-content');
@@ -505,26 +527,31 @@ async function renderEscolhaLinha(container) {
 
   // Sequencial de propósito: o supabase-js trava com várias chamadas simultâneas (Web Lock).
   const ultimos = {};
-  for (const linha of linhas) {
+  for (const { nome } of linhas) {
     try {
       const { data, error } = await withTimeout(
-        supabase.from('qualidade_laminacao_rq03').select('created_at').eq('bpl_id', currentBPLID).eq('linha', linha).order('created_at', { ascending: false }).limit(1),
+        supabase.from('qualidade_laminacao_rq03').select('created_at').eq('bpl_id', currentBPLID).eq('linha', nome).order('created_at', { ascending: false }).limit(1),
         10000
       );
       if (error) throw error;
-      ultimos[linha] = data?.[0]?.created_at || null;
+      ultimos[nome] = data?.[0]?.created_at || null;
     } catch (err) {
-      console.error('Erro ao buscar último apontamento da linha', linha, err);
-      ultimos[linha] = null;
+      console.error('Erro ao buscar último apontamento da linha', nome, err);
+      ultimos[nome] = null;
     }
   }
 
   content.innerHTML = `
     <div style="margin-bottom: 10px; font-size: 0.85rem; color: var(--color-text-sec);">Escolha a linha para este apontamento:</div>
-    ${linhas.map(linha => cardLinha(linha, ultimos[linha])).join('')}`;
+    ${linhas.map(l => cardLinha(l.id, l.nome, ultimos[l.nome])).join('')}`;
 
   content.querySelectorAll('.linha-card').forEach(el => {
-    el.addEventListener('click', () => { estado.linha = el.dataset.linha; persistirRascunho(); renderEtapa(container); });
+    el.addEventListener('click', () => {
+      estado.linha = el.dataset.linha;
+      estado.linhaId = el.dataset.linhaId;
+      persistirRascunho();
+      renderEtapa(container);
+    });
   });
 }
 
