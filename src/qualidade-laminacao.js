@@ -3,19 +3,24 @@ import { currentBPLID, withTimeout, rawRpc, podeAgir, getAccessToken, renderBran
 import { CARD_STYLE, headerHtml, bindHeader, renderErro, SPINNER } from './setup-secadores.js';
 import { esc } from './lamina-seca.js';
 import { capturarFotoComCarimbo } from './foto-carimbo.js';
+import { salvarRascunho, lerRascunho, limparRascunho } from './rascunho-local.js';
 
 const SLUG = 'app_qualidade_laminacao';
 const BUCKET = 'qualidade-fotos';
 const N_CORPOS = 4; // lâminas auditadas por apontamento
 const N_ROLETES = 4;
 const UPLOADS_SIMULTANEOS = 4;
+const CHAVE_RASCUNHO = 'rq03-laminacao';
+const PRAZO_RASCUNHO_MS = 4 * 60 * 60 * 1000; // rascunho com mais de 4h é tratado como abandonado (conferência é de hora em hora)
 
 // RQ03 - Registro de Qualidade - Laminação (plano: PLANO_RQ03.md). Um apontamento = 4 corpos de prova
 // (comprimento, largura, espessura, esquadro) + 4 roletes (temperatura), cada medida com foto carimbada.
 // A tela é paginada: uma página por medida. A classificação (OK/ALERTA/PROBLEMA) é feita só no banco
 // (função registrar_rq03_laminacao) e propositalmente NÃO aparece aqui.
 //
-// Rascunho: fica em memória (módulo) enquanto o app não for recarregado; sair da tela e voltar continua de onde parou.
+// Rascunho: fica em memória (módulo) e também é salvo no IndexedDB do aparelho a cada mudança (fotos incluídas)
+// — sobrevive a uma recarga do app (ex.: o PWA se atualiza sozinho, ou o navegador descarrega a aba com pouca
+// memória ao abrir a câmera). Só existe localmente, não sincroniza entre aparelhos.
 
 const TIPOS = {
   comprimento: { nome: 'Comprimento', unidade: 'm', casas: 2, pontos: 2, padrao: true,
@@ -70,6 +75,31 @@ const temProgresso = () => !!estado.linha
 function descartarRascunho() {
   if (estado) for (const itens of Object.values(estado.medidas)) for (const pts of itens) for (const p of pts) if (p.url) URL.revokeObjectURL(p.url);
   estado = novoEstado();
+  limparRascunho(CHAVE_RASCUNHO); // fire-and-forget: nunca trava a tela por isso
+}
+
+/** Guarda o estado atual no aparelho (fire-and-forget). As fotos (Blob) vão junto; a `url` (objeto da sessão,
+ *  não sobrevive a recarga) é recriada a partir da foto ao restaurar. */
+function persistirRascunho() {
+  const semUrl = (p) => ({ valor: p.valor, foto: p.foto, capturadaEm: p.capturadaEm });
+  salvarRascunho(CHAVE_RASCUNHO, {
+    id: estado.id,
+    bplId: estado.bplId,
+    linha: estado.linha,
+    etapa: estado.etapa,
+    padroes: estado.padroes,
+    medidas: Object.fromEntries(Object.entries(estado.medidas).map(([tipo, itens]) => [tipo, itens.map(pts => pts.map(semUrl))])),
+    enviadas: [...estado.enviadas]
+  });
+}
+
+function restaurarEstado(dados) {
+  const comUrl = (p) => ({ ...p, url: p.foto ? URL.createObjectURL(p.foto) : null });
+  return {
+    ...dados,
+    medidas: Object.fromEntries(Object.entries(dados.medidas).map(([tipo, itens]) => [tipo, itens.map(pts => pts.map(comUrl))])),
+    enviadas: new Set(dados.enviadas || [])
+  };
 }
 
 // ---------- utilidades ----------
@@ -218,6 +248,7 @@ function renderMedida(container, etapa) {
     e.target.value = limparNumero(e.target.value, cfg.casas);
     estado.padroes[etapa.tipo] = e.target.value;
     atualizarProximo();
+    persistirRascunho();
   });
 
   corpo.querySelectorAll('.valor-input').forEach((input) => {
@@ -225,6 +256,7 @@ function renderMedida(container, etapa) {
       input.value = limparNumero(input.value, cfg.casas);
       pontos[Number(input.dataset.ponto)].valor = input.value;
       atualizarProximo();
+      persistirRascunho();
     });
   });
 
@@ -241,6 +273,7 @@ function renderMedida(container, etapa) {
         if (atual.url) URL.revokeObjectURL(atual.url);
         estado.enviadas.delete(caminhoFoto(etapa.tipo, etapa.indice, i + 1)); // foto nova: precisa subir de novo
         Object.assign(atual, { foto: foto.blob, url: URL.createObjectURL(foto.blob), capturadaEm: foto.capturadaEm });
+        persistirRascunho();
         renderEtapa(container);
       } catch (err) {
         console.error('Erro na foto:', err);
@@ -249,10 +282,11 @@ function renderMedida(container, etapa) {
     });
   });
 
-  document.getElementById('btn-anterior').addEventListener('click', () => { if (estado.etapa > 0) { estado.etapa--; renderEtapa(container); } });
+  document.getElementById('btn-anterior').addEventListener('click', () => { if (estado.etapa > 0) { estado.etapa--; persistirRascunho(); renderEtapa(container); } });
   document.getElementById('btn-proximo').addEventListener('click', () => {
     if (!etapaCompleta(etapa)) return;
     estado.etapa++;
+    persistirRascunho();
     renderEtapa(container);
   });
 }
@@ -291,8 +325,8 @@ function renderRevisao(container) {
   const progresso = document.getElementById('envio-progresso');
   const pronto = () => faltando < 0 && /^\d{4}$/.test(pinInput.value) && podeAgir(SLUG);
 
-  document.getElementById('btn-ir-faltando')?.addEventListener('click', () => { estado.etapa = faltando; renderEtapa(container); });
-  btnAnterior.addEventListener('click', () => { estado.etapa--; renderEtapa(container); });
+  document.getElementById('btn-ir-faltando')?.addEventListener('click', () => { estado.etapa = faltando; persistirRascunho(); renderEtapa(container); });
+  btnAnterior.addEventListener('click', () => { estado.etapa--; persistirRascunho(); renderEtapa(container); });
   pinInput.addEventListener('input', () => { btnSalvar.disabled = !pronto(); });
 
   btnSalvar.addEventListener('click', async () => {
@@ -483,11 +517,11 @@ async function renderEscolhaLinha(container) {
     ${linhas.map(linha => cardLinha(linha, ultimos[linha])).join('')}`;
 
   content.querySelectorAll('.linha-card').forEach(el => {
-    el.addEventListener('click', () => { estado.linha = el.dataset.linha; renderEtapa(container); });
+    el.addEventListener('click', () => { estado.linha = el.dataset.linha; persistirRascunho(); renderEtapa(container); });
   });
 }
 
-export function renderRq03Laminacao(container) {
+export async function renderRq03Laminacao(container) {
   if (!podeAgir(SLUG)) {
     container.innerHTML = `
       ${headerHtml('RQ03 · Qualidade Laminação', '/qualidade-laminacao')}
@@ -495,8 +529,14 @@ export function renderRq03Laminacao(container) {
     bindHeader();
     return;
   }
-  // Rascunho de outra filial não vale: as fotos vão para a pasta da filial escolhida
-  if (!estado || estado.bplId !== currentBPLID) descartarRascunho();
+  if (!estado) {
+    // Primeira vez desde que o app carregou (ou recarregou): tenta retomar o rascunho salvo no aparelho.
+    const salvo = await lerRascunho(CHAVE_RASCUNHO, PRAZO_RASCUNHO_MS);
+    estado = salvo && salvo.bplId === currentBPLID ? restaurarEstado(salvo) : novoEstado();
+  } else if (estado.bplId !== currentBPLID) {
+    // Rascunho de outra filial não vale: as fotos vão para a pasta da filial escolhida
+    descartarRascunho();
+  }
   entrarFluxo(container);
 }
 
